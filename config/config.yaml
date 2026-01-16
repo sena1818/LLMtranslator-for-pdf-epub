@@ -1,0 +1,50 @@
+# 翻译系统配置文件
+
+# API 配置
+api:
+  provider: "siliconflow"  # siliconflow, openai, google
+  base_url: "https://api.siliconflow.cn/v1"
+  model: "deepseek-ai/DeepSeek-V3"
+
+  # LLM 参数
+  translator:
+    temperature: 0.3  # 翻译创造性
+    max_retries: 3
+
+  checker:
+    temperature: 0.1  # 质检确定性
+
+# 并发控制
+concurrency:
+  max_concurrent_requests: 10
+  batch_size: 5
+  rate_limit_per_minute: 200
+  request_timeout: 60
+
+# 文本分块
+text_splitting:
+  chunk_size: 2000
+  chunk_overlap: 0
+  separators: ["\n\n", "\n", ".", "!", "?", " ", ""]
+
+# 路径配置 (相对于项目根目录)
+paths:
+  input: "data/input"
+  output: "data/output"
+  temp: "data/temp"
+  glossaries: "data/glossaries"
+  logs: "logs"
+
+# 日志配置
+logging:
+  level: "INFO"
+  format: "%(asctime)s - [%(levelname)s] - %(message)s"
+
+# 翻译质量控制
+quality:
+  max_fix_attempts: 1
+  enable_qa_check: true
+  qa_checks:
+    - "terminology"  # 术语一致性
+    - "untranslated"  # 未翻译检测
+    - "format"  # 格式保留

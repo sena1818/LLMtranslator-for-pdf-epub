@@ -1,0 +1,27 @@
+# LangChain 核心组件
+langchain-core>=0.3.0
+langchain-openai>=0.2.0
+langchain-google-genai>=2.0.0
+langchain-text-splitters>=0.3.0
+langgraph>=0.2.0
+
+# 异步文件操作
+aiofiles>=24.1.0
+
+# 配置管理
+python-dotenv>=1.0.0
+pyyaml>=6.0.1
+
+# 文档转换（需手动安装 marker 和 pandoc CLI 工具）
+# marker: pip install marker-pdf
+# pandoc: brew install pandoc (macOS) 或从 https://pandoc.org 下载
+
+# Web 框架 (新增)
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+
+# 数据库 (新增)
+aiosqlite>=0.19.0
+
+# 文件上传 (新增)
+python-multipart>=0.0.6
