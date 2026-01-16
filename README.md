@@ -262,8 +262,8 @@ python translate.py input.md --skip-formatting
 
 ## 📮 联系方式
 
-- 问题反馈: [GitHub Issues](https://github.com/你的用户名/translator/issues)
-- 项目主页: [GitHub](https://github.com/你的用户名/translator)
+- 问题反馈: [GitHub Issues](https://github.com/sena1818/translator/issues)
+- 项目主页: [GitHub](https://github.com/sena1818/translator)
 
 ---
 
