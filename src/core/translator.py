@@ -110,11 +110,43 @@ class TranslationEngine:
         text = re.sub(r'^```markdown\s*', '', text)
         text = re.sub(r'\s*```$', '', text)
 
+        # 清理重复短语 (LLM 循环问题)
+        text = self._remove_repetitions(text)
+
         return text.strip()
+
+    def _remove_repetitions(self, text: str) -> str:
+        """
+        检测并移除重复短语
+
+        常见的 LLM 重复模式:
+        1. 短语连续重复 5+ 次
+        2. 句子重复
+
+        Args:
+            text: 待处理文本
+
+        Returns:
+            清理后的文本
+        """
+        # 1. 移除连续重复的短语 (5-50字符重复5次以上)
+        # 匹配: "某某某某某某某某某某某某" (重复的短语)
+        text = re.sub(r'(.{5,50}?)\1{4,}', r'\1', text)
+
+        # 2. 移除连续重复的中文词组 (2-10字重复5次以上)
+        text = re.sub(r'([一-龥]{2,10})\1{4,}', r'\1', text)
+
+        # 3. 移除连续重复的英文单词 (重复5次以上)
+        text = re.sub(r'\b(\w{3,})\s+(\1\s+){4,}', r'\1 ', text, flags=re.IGNORECASE)
+
+        # 4. 移除连续重复的标点 (如 。。。。。。)
+        text = re.sub(r'([。，！？；：])\1{3,}', r'\1\1\1', text)
+
+        return text
 
     def build_prompt(self, text: str, context: str = "") -> ChatPromptTemplate:
         """
-        构建翻译 Prompt
+        构建翻译 Prompt (含 Few-shot 示例)
 
         Args:
             text: 待翻译文本
@@ -123,12 +155,24 @@ class TranslationEngine:
         Returns:
             Prompt 模板
         """
-        glossary_str = "\n".join([f"- {en}: {zh}" for en, zh in self.glossary.items()])
-
         template = """你是专业的后现代哲学翻译家,正在翻译学术文本。
 
 【核心术语表】(必须严格遵守):
 {glossary}
+
+【翻译示例】:
+
+示例1 - 理论性文本:
+原文: The rhizome operates by variation, expansion, conquest, capture, offshoots. It has neither beginning nor end, but always a middle from which it grows and which it overspills.
+译文: 根茎（rhizome）通过变异、扩张、征服、俘获、分蘖来运作。它既无起点也无终点，只有永恒的中间地带——从中生长，又从中溢出。
+
+示例2 - 晦涩哲学文本:
+原文: Hyperstition is not a fiction that becomes true, but a fiction that makes itself true. It operates as an agent of its own realization.
+译文: 超虚构（Hyperstition）并非变成真实的虚构，而是使自身成真的虚构。它作为自身实现的能动者运作。
+
+示例3 - 带注释的学术文本:
+原文: As Deleuze and Guattari argue in *A Thousand Plateaus*, the war machine is exterior to the State apparatus.
+译文: 正如德勒兹（Deleuze）与瓜塔里（Guattari）在《千高原》（*A Thousand Plateaus*）中所论，战争机器（war machine）外在于国家机器。
 
 【上文语境】:
 {context}
@@ -138,13 +182,13 @@ class TranslationEngine:
 
 ---
 【翻译要求】:
-1. 完整保留所有 Markdown 格式（标题、加粗、图片、换行）
-2. 风格：学术、晦涩、带理论虚构感
-3. 专有名词首次出现保留英文原文在括号内
+1. 完整保留所有 Markdown 格式（标题、加粗、图片、链接、代码块）
+2. 风格：学术、晦涩、保持理论张力
+3. 专有名词首次出现时保留英文原文在括号内
 4. 严格使用术语表中的译名
-5. **直接输出译文,不要任何前言、后记、注释**
+5. 直接输出译文，不要任何前言、解释、注释
 
-开始翻译（直接输出译文）:
+开始翻译:
 """
 
         return ChatPromptTemplate.from_template(template)

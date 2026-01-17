@@ -89,11 +89,21 @@ class TranslationService:
             # 2. 文档转换（如果需要）
             if file_path.suffix.lower() in ['.pdf', '.epub']:
                 temp_dir = Path("data/temp") / task_id
-                markdown_file = self.converter.convert(file_path, temp_dir)
+                temp_dir.mkdir(parents=True, exist_ok=True)
+                try:
+                    markdown_file = self.converter.convert(file_path, temp_dir)
+                except Exception as e:
+                    raise RuntimeError(f"文档转换失败: {str(e)}")
+
+                if markdown_file is None:
+                    raise RuntimeError(f"文档转换失败: 未能生成 Markdown 文件")
             else:
                 markdown_file = file_path
 
             # 3. 读取文本
+            if not markdown_file.exists():
+                raise RuntimeError(f"Markdown 文件不存在: {markdown_file}")
+
             with open(markdown_file, 'r', encoding='utf-8') as f:
                 text = f.read()
 

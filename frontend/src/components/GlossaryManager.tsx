@@ -35,13 +35,13 @@ import {
   type Glossary,
 } from '../services/api';
 
-const { Title, Text } = Typography;
+const { Title } = Typography;
 
 const GlossaryManager: React.FC = () => {
   const queryClient = useQueryClient();
   const [selectedGlossary, setSelectedGlossary] = useState<string | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [, setIsEditModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [createForm] = Form.useForm();
   const [editForm] = Form.useForm();
