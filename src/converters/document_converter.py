@@ -56,29 +56,47 @@ class DocumentConverter:
 
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        # 运行 marker
+        # 运行 marker (新版本命令格式)
         cmd = [
             'marker_single',
             str(pdf_path),
-            str(output_dir),
-            '--batch_multiplier', '2',
-            '--langs', 'English'
+            '--output_dir', str(output_dir),
+            '--output_format', 'markdown'
         ]
 
         logger.info(f"正在转换 PDF: {pdf_path.name}")
+        logger.info(f"命令: {' '.join(cmd)}")
         result = subprocess.run(cmd, capture_output=True, text=True)
 
         if result.returncode != 0:
             logger.error(f"PDF 转换失败: {result.stderr}")
-            return None
+            logger.error(f"stdout: {result.stdout}")
+            raise RuntimeError(f"PDF 转换失败: {result.stderr or result.stdout}")
 
-        # 查找生成的 Markdown 文件
+        # 查找生成的 Markdown 文件 (marker 可能会在子目录中生成)
+        # 1. 直接在 output_dir 中查找
         md_file = output_dir / f"{pdf_path.stem}.md"
         if md_file.exists():
             logger.info(f"PDF 转换成功: {md_file}")
             return md_file
 
-        return None
+        # 2. 在以文件名命名的子目录中查找
+        subdir = output_dir / pdf_path.stem
+        if subdir.exists():
+            md_file = subdir / f"{pdf_path.stem}.md"
+            if md_file.exists():
+                logger.info(f"PDF 转换成功: {md_file}")
+                return md_file
+
+        # 3. 递归查找所有 .md 文件
+        md_files = list(output_dir.rglob("*.md"))
+        if md_files:
+            # 返回第一个找到的 md 文件
+            md_file = md_files[0]
+            logger.info(f"PDF 转换成功 (搜索到): {md_file}")
+            return md_file
+
+        raise RuntimeError(f"PDF 转换完成但未找到 Markdown 文件，请检查输出目录: {output_dir}")
 
     def epub_to_markdown(
         self,

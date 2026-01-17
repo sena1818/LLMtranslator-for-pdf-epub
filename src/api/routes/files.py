@@ -1,24 +1,54 @@
 """
 文件服务 API 路由
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 from pathlib import Path
+import sys
+
+# 添加项目根目录到 Python 路径
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
+from src.services.export_service import ExportService
 
 router = APIRouter(prefix="/api/files", tags=["files"])
 
 
 @router.get("/results/{task_id}")
-async def download_result(task_id: str):
+async def download_result(
+    task_id: str,
+    format: str = Query("md", description="导出格式: md 或 html")
+):
     """
     下载翻译结果
 
-    返回: Markdown 文件
+    参数:
+    - format: 导出格式 (md/html)
+
+    返回: Markdown 或 HTML 文件
     """
     result_path = Path(f"data/results/{task_id}.md")
     if not result_path.exists():
         raise HTTPException(status_code=404, detail="结果文件不存在")
 
+    if format == "html":
+        # 导出为 HTML 双栏格式
+        html_path = Path(f"data/results/{task_id}.html")
+
+        # 如果 HTML 不存在或 Markdown 更新了,重新生成
+        if not html_path.exists() or html_path.stat().st_mtime < result_path.stat().st_mtime:
+            ExportService.export_bilingual_html(
+                str(result_path),
+                str(html_path),
+                title=f"翻译结果 - {task_id[:8]}"
+            )
+
+        return FileResponse(
+            path=html_path,
+            filename=f"translation_{task_id}.html",
+            media_type="text/html"
+        )
+
+    # 默认返回 Markdown
     return FileResponse(
         path=result_path,
         filename=f"translation_{task_id}.md",

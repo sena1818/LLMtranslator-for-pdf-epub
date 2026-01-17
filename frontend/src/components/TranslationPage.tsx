@@ -227,18 +227,32 @@ const TranslationPage: React.FC = () => {
     {
       title: '操作',
       key: 'actions',
-      width: 140,
+      width: 200,
       render: (_: unknown, record: TranslationTask) => (
         <Space>
           {record.status === 'completed' && record.result_url && (
-            <Button
-              type="primary"
-              size="small"
-              icon={<DownloadOutlined />}
-              onClick={() => window.open(downloadResult(record.task_id), '_blank')}
-            >
-              下载
-            </Button>
+            <>
+              <Tooltip title="下载 Markdown">
+                <Button
+                  type="primary"
+                  size="small"
+                  icon={<DownloadOutlined />}
+                  onClick={() => window.open(downloadResult(record.task_id, 'md'), '_blank')}
+                >
+                  MD
+                </Button>
+              </Tooltip>
+              <Tooltip title="下载双栏 HTML">
+                <Button
+                  size="small"
+                  style={{ background: '#52c41a', borderColor: '#52c41a', color: 'white' }}
+                  icon={<DownloadOutlined />}
+                  onClick={() => window.open(downloadResult(record.task_id, 'html'), '_blank')}
+                >
+                  HTML
+                </Button>
+              </Tooltip>
+            </>
           )}
           {(record.status === 'completed' || record.status === 'failed') && (
             <Button
@@ -466,9 +480,17 @@ const TranslationPage: React.FC = () => {
                   type="primary"
                   size="small"
                   icon={<DownloadOutlined />}
-                  onClick={() => window.open(downloadResult(currentTask.task_id), '_blank')}
+                  onClick={() => window.open(downloadResult(currentTask.task_id, 'md'), '_blank')}
                 >
-                  立即下载
+                  下载 MD
+                </Button>
+                <Button
+                  size="small"
+                  style={{ background: '#52c41a', borderColor: '#52c41a', color: 'white' }}
+                  icon={<DownloadOutlined />}
+                  onClick={() => window.open(downloadResult(currentTask.task_id, 'html'), '_blank')}
+                >
+                  下载 HTML
                 </Button>
               </Space>
             }

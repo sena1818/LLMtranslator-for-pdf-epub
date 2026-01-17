@@ -107,9 +107,11 @@ export const deleteTask = async (taskId: string): Promise<void> => {
 
 /**
  * 下载翻译结果
+ * @param taskId 任务ID
+ * @param format 导出格式: 'md' 或 'html'
  */
-export const downloadResult = (taskId: string): string => {
-  return `${API_BASE_URL}/api/files/results/${taskId}`;
+export const downloadResult = (taskId: string, format: 'md' | 'html' = 'md'): string => {
+  return `${API_BASE_URL}/api/files/results/${taskId}?format=${format}`;
 };
 
 // ============== 术语表 API ==============
