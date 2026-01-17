@@ -29,6 +29,7 @@ export interface TranslationTask {
   filename: string;
   status: 'pending' | 'processing' | 'completed' | 'failed';
   glossary_id: string | null;
+  bilingual: boolean;
   progress: TaskProgress;
   result_url: string | null;
   error: string | null;
@@ -56,13 +57,15 @@ export interface Glossary {
  */
 export const createTranslationTask = async (
   file: File,
-  glossaryId?: string
+  glossaryId?: string,
+  bilingual: boolean = false
 ): Promise<TranslationTask> => {
   const formData = new FormData();
   formData.append('file', file);
   if (glossaryId) {
     formData.append('glossary_id', glossaryId);
   }
+  formData.append('bilingual', String(bilingual));
 
   const response = await apiClient.post<TranslationTask>(
     '/api/translation/tasks',

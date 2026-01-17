@@ -31,7 +31,8 @@ class TranslationService:
         self,
         file_content: bytes,
         filename: str,
-        glossary_id: Optional[str] = None
+        glossary_id: Optional[str] = None,
+        bilingual: bool = False
     ) -> TranslationTask:
         """创建翻译任务"""
         task_id = str(uuid.uuid4())
@@ -50,6 +51,7 @@ class TranslationService:
             filename=filename,
             status=TaskStatus.PENDING,
             glossary_id=glossary_id,
+            bilingual=bilingual,
             progress=TaskProgress(),
             created_at=datetime.now(),
             updated_at=datetime.now()
@@ -117,7 +119,8 @@ class TranslationService:
 
             # 初始化输出文件
             with open(output_path, 'w', encoding='utf-8') as f:
-                f.write(f"# {task.filename} - 中文翻译\n\n")
+                mode_text = "（双语对照）" if task.bilingual else ""
+                f.write(f"# {task.filename} - 中文翻译{mode_text}\n\n")
                 f.write(f"> 由 AI 自动翻译\n\n")
 
             # 8. 定义进度回调
@@ -134,11 +137,12 @@ class TranslationService:
                     # 更新数据库
                     await self.db.update_task(task)
 
-            # 9. 执行翻译
+            # 9. 执行翻译 (支持双语对照模式)
             results = await engine.translate_batch(
                 text=text,
                 output_path=output_path,
-                progress_callback=progress_callback
+                progress_callback=progress_callback,
+                bilingual=task.bilingual
             )
 
             # 10. 标记完成
