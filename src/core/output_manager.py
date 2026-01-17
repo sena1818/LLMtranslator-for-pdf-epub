@@ -16,21 +16,24 @@ class OutputManager:
     - 缓冲异步完成的结果
     - 按索引顺序写入文件
     - 失败块写入占位符,不阻塞后续
+    - 支持双语对照输出模式
     """
 
-    def __init__(self, output_path: str, start_index: int = 0):
+    def __init__(self, output_path: str, start_index: int = 0, bilingual: bool = False):
         """
         初始化输出管理器
 
         Args:
             output_path: 输出文件路径
             start_index: 起始索引(用于断点续传)
+            bilingual: 是否启用双语对照模式
         """
         self.output_path = output_path
-        self.buffer = {}  # {index: content}
+        self.buffer = {}  # {index: (content, original)}
         self.next_index = start_index
         self.lock = asyncio.Lock()
         self.written_count = 0
+        self.bilingual = bilingual
 
     async def add_result(
         self,
@@ -46,12 +49,17 @@ class OutputManager:
             index: 块索引
             content: 翻译内容
             success: 是否成功
-            original_text: 原文(用于失败占位符)
+            original_text: 原文(用于失败占位符和双语对照)
         """
         async with self.lock:
             # 1. 构造写入内容
             if success:
-                final_content = content
+                if self.bilingual and original_text:
+                    # 双语对照模式: 原文(引用块) + 译文
+                    final_content = self._format_bilingual(original_text, content)
+                else:
+                    # 普通模式: 仅译文
+                    final_content = content
             else:
                 # 失败时写入占位符
                 final_content = (
@@ -76,6 +84,23 @@ class OutputManager:
                     del self.buffer[self.next_index]
                     self.next_index += 1
                     self.written_count += 1
+
+    def _format_bilingual(self, original: str, translation: str) -> str:
+        """
+        格式化双语对照内容
+
+        Args:
+            original: 原文
+            translation: 译文
+
+        Returns:
+            格式化后的双语对照文本
+        """
+        # 将原文每行转换为引用格式
+        original_lines = original.strip().split('\n')
+        quoted_original = '\n'.join(f'> {line}' for line in original_lines)
+
+        return f"{quoted_original}\n\n{translation}\n\n---"
 
     @property
     def current_index(self) -> int:

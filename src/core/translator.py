@@ -234,7 +234,8 @@ class TranslationEngine:
         self,
         text: str,
         output_path: Path,
-        progress_callback: Optional[Callable] = None
+        progress_callback: Optional[Callable] = None,
+        bilingual: bool = False
     ) -> List[TranslationResult]:
         """
         批量翻译完整文本
@@ -243,6 +244,7 @@ class TranslationEngine:
             text: 完整文本
             output_path: 输出文件路径
             progress_callback: 进度回调
+            bilingual: 是否启用双语对照模式
 
         Returns:
             翻译结果列表
@@ -258,7 +260,7 @@ class TranslationEngine:
             })
 
         # 2. 创建输出管理器
-        output_manager = OutputManager(str(output_path))
+        output_manager = OutputManager(str(output_path), bilingual=bilingual)
 
         # 3. 准备任务列表
         tasks = []
