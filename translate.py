@@ -113,7 +113,8 @@ class TranslationPipeline:
         output_file: Path = None,
         glossary_path: Path = None,
         skip_conversion: bool = False,
-        skip_formatting: bool = False
+        skip_formatting: bool = False,
+        bilingual: bool = False
     ):
         """
         运行完整翻译流程
@@ -124,6 +125,7 @@ class TranslationPipeline:
             glossary_path: 术语表路径
             skip_conversion: 跳过格式转换(直接翻译 Markdown)
             skip_formatting: 跳过格式化后处理(保留原始翻译结果)
+            bilingual: 双语对照模式(原文+译文交替输出)
         """
         logger.info("="*60)
         logger.info("🚀 翻译流水线启动")
@@ -199,13 +201,17 @@ class TranslationPipeline:
                 )
 
         # 步骤 8: 执行翻译
-        logger.info("🚀 开始翻译...")
+        if bilingual:
+            logger.info("🚀 开始翻译 (双语对照模式)...")
+        else:
+            logger.info("🚀 开始翻译...")
         logger.info("="*60)
 
         results = await engine.translate_batch(
             text=text,
             output_path=output_file,
-            progress_callback=progress_callback
+            progress_callback=progress_callback,
+            bilingual=bilingual
         )
 
         # 步骤 9: 智能格式化清理
@@ -263,6 +269,12 @@ def main():
     )
 
     parser.add_argument(
+        '--bilingual',
+        action='store_true',
+        help='双语对照模式: 输出原文(引用块) + 译文'
+    )
+
+    parser.add_argument(
         '-c', '--config',
         type=Path,
         help='配置文件路径 (默认: config/config.yaml)'
@@ -283,7 +295,8 @@ def main():
         output_file=args.output,
         glossary_path=args.glossary,
         skip_conversion=args.skip_conversion,
-        skip_formatting=args.skip_formatting
+        skip_formatting=args.skip_formatting,
+        bilingual=args.bilingual
     ))
 
 
