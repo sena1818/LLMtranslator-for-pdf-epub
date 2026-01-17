@@ -14,6 +14,7 @@ service = TranslationService()
 async def create_translation_task(
     file: UploadFile = File(...),
     glossary_id: Optional[str] = Form(None),
+    bilingual: Optional[bool] = Form(False),
     background_tasks: BackgroundTasks = None
 ):
     """
@@ -22,6 +23,7 @@ async def create_translation_task(
     请求:
     - file: 上传的文件 (PDF/EPUB/Markdown)
     - glossary_id: 术语表 ID (可选)
+    - bilingual: 是否启用双语对照模式 (默认 False)
 
     返回:
     {
@@ -32,7 +34,7 @@ async def create_translation_task(
     }
     """
     content = await file.read()
-    task = await service.create_task(content, file.filename, glossary_id)
+    task = await service.create_task(content, file.filename, glossary_id, bilingual)
 
     # 后台启动翻译
     background_tasks.add_task(service.start_translation, task.task_id)

@@ -35,6 +35,7 @@ class TranslationTask:
     filename: str
     status: TaskStatus
     glossary_id: Optional[str] = None
+    bilingual: bool = False  # 双语对照模式
     progress: TaskProgress = None
     result_url: Optional[str] = None
     error: Optional[str] = None
@@ -55,6 +56,7 @@ class TranslationTask:
             "filename": self.filename,
             "status": self.status.value if isinstance(self.status, TaskStatus) else self.status,
             "glossary_id": self.glossary_id,
+            "bilingual": self.bilingual,
             "progress": self.progress.to_dict() if self.progress else {},
             "result_url": self.result_url,
             "error": self.error,
