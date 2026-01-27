@@ -30,6 +30,7 @@ logging.basicConfig(
     handlers=[
         logging.FileHandler('logs/translation.log'),
         logging.StreamHandler()
+
     ]
 )
 logger = logging.getLogger(__name__)

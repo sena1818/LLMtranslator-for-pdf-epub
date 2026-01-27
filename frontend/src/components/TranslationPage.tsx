@@ -62,10 +62,15 @@ const TranslationPage: React.FC = () => {
   });
 
   // 获取任务列表
-  const { data: taskListData, isLoading: isLoadingTasks } = useQuery({
+  const {
+    data: taskListData,
+    isLoading: isLoadingTasks,
+    isRefetching: isRefetchingTasks,
+    refetch: refetchTasks
+  } = useQuery({
     queryKey: ['tasks'],
     queryFn: () => getTaskList(0, 20),
-    refetchInterval: 3000,
+    refetchInterval: 5000, // 增加轮询间隔，减少请求压力
   });
 
   // 查询当前任务状态
@@ -198,8 +203,8 @@ const TranslationPage: React.FC = () => {
             record.status === 'failed'
               ? 'exception'
               : record.status === 'completed'
-              ? 'success'
-              : 'active'
+                ? 'success'
+                : 'active'
           }
         />
       ),
@@ -522,8 +527,11 @@ const TranslationPage: React.FC = () => {
           }
           extra={
             <Button
-              icon={<ReloadOutlined />}
-              onClick={() => queryClient.invalidateQueries({ queryKey: ['tasks'] })}
+              icon={<ReloadOutlined spin={isRefetchingTasks} />}
+              onClick={() => {
+                refetchTasks().then(() => message.success('列表已刷新'));
+              }}
+              loading={isRefetchingTasks}
             >
               刷新
             </Button>
