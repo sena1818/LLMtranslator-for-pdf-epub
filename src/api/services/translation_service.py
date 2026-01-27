@@ -12,10 +12,8 @@ from ..database.db import Database
 from .glossary_service import GlossaryService
 
 # 导入现有的翻译引擎（完全复用）
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
-from src.core.translator import TranslationEngine
-from src.converters.document_converter import DocumentConverter
+from ...core.translator import TranslationEngine
+from ...converters.document_converter import DocumentConverter
 
 
 class TranslationService:
@@ -62,22 +60,40 @@ class TranslationService:
 
         return task
 
+    async def reset_interrupted_tasks(self):
+        """
+        重置因服务器重启而中断的任务
+        """
+        # 1. 获取所有状态为 "processing" 的任务
+        tasks, _ = await self.db.list_tasks(limit=1000)
+        reset_count = 0
+        
+        for task in tasks:
+            if task.status == TaskStatus.PROCESSING:
+                # 2. 标记为失败
+                task.status = TaskStatus.FAILED
+                task.error = "任务因服务器重启而中断 (Task interrupted by server restart)"
+                task.updated_at = datetime.now()
+                await self.db.update_task(task)
+                reset_count += 1
+                
+        return reset_count
+
     async def start_translation(self, task_id: str):
         """
         启动翻译 (后台任务)
-
-        核心流程:
-        1. 文档转换 (PDF/EPUB → Markdown)
-        2. 加载术语表
-        3. 调用 TranslationEngine.translate_batch
-        4. 更新进度 (通过回调)
-        5. 保存结果
         """
+        import logging
+        logger = logging.getLogger(__name__)
+        
         task = await self.db.get_task(task_id)
         if not task:
+            logger.error(f"任务不存在: {task_id}")
             return
 
         try:
+            logger.info(f"🚀 开始翻译任务: {task.filename} (ID: {task_id})")
+            
             # 更新状态为处理中
             task.status = TaskStatus.PROCESSING
             task.updated_at = datetime.now()
@@ -88,11 +104,14 @@ class TranslationService:
 
             # 2. 文档转换（如果需要）
             if file_path.suffix.lower() in ['.pdf', '.epub']:
+                logger.info(f"📄 开始转换文档: {file_path.name}")
                 temp_dir = Path("data/temp") / task_id
                 temp_dir.mkdir(parents=True, exist_ok=True)
                 try:
                     markdown_file = self.converter.convert(file_path, temp_dir)
+                    logger.info(f"✅ 文档转换成功: {markdown_file}")
                 except Exception as e:
+                    logger.error(f"❌ 文档转换失败: {str(e)}")
                     raise RuntimeError(f"文档转换失败: {str(e)}")
 
                 if markdown_file is None:
@@ -110,6 +129,7 @@ class TranslationService:
             # 4. 加载术语表
             glossary = {}
             if task.glossary_id:
+                logger.info(f"📚 加载术语表: {task.glossary_id}")
                 glossary_data = await self.glossary_service.get_glossary(task.glossary_id)
                 if glossary_data:
                     glossary = glossary_data.get("terms", {})
@@ -121,6 +141,7 @@ class TranslationService:
             chunks = engine.split_text(text)
             task.progress.total = len(chunks)
             await self.db.update_task(task)
+            logger.info(f"✂️ 文本已分块: {len(chunks)} chunks")
 
             # 7. 准备输出路径
             result_dir = Path("data/results")
@@ -144,10 +165,17 @@ class TranslationService:
                     task.progress.percentage = (task.progress.current / task.progress.total) * 100
                     task.progress.speed = (task.progress.current / elapsed) * 60 if elapsed > 0 else 0
 
+                    # 只有当进度整除 5 或完成时才打印详细日志，避免刷屏
+                    if task.progress.current % 5 == 0 or task.progress.current == task.progress.total:
+                        logger.info(f"⏳ 进度: {task.progress.current}/{task.progress.total} ({task.progress.percentage:.1f}%)")
+
                     # 更新数据库
                     await self.db.update_task(task)
+                elif event.get("status") == "failed":
+                    logger.error(f"❌ Chunk 翻译失败: {event.get('error')}")
 
             # 9. 执行翻译 (支持双语对照模式)
+            logger.info("🎬 开始调用 LLM 进行翻译...")
             results = await engine.translate_batch(
                 text=text,
                 output_path=output_path,
@@ -160,9 +188,11 @@ class TranslationService:
             task.result_url = f"/api/files/results/{task_id}"
             task.updated_at = datetime.now()
             await self.db.update_task(task)
+            logger.info(f"✅ 翻译任务完成! 结果保存在: {output_path}")
 
         except Exception as e:
             # 标记失败
+            logger.error(f"❌ 任务失败: {str(e)}")
             task.status = TaskStatus.FAILED
             task.error = str(e)
             task.updated_at = datetime.now()
@@ -177,19 +207,32 @@ class TranslationService:
         return await self.db.list_tasks(skip, limit)
 
     async def delete_task(self, task_id: str) -> bool:
-        """删除任务"""
+        """删除任务及其所有相关文件"""
+        import shutil
+
         task = await self.db.get_task(task_id)
         if not task or task.status == TaskStatus.PROCESSING:
             return False
 
-        # 删除文件
+        # 删除上传文件
         upload_file = Path(f"data/uploads/{task_id}_{task.filename}")
         if upload_file.exists():
             upload_file.unlink()
 
+        # 删除结果文件 (MD)
         result_file = Path(f"data/results/{task_id}.md")
         if result_file.exists():
             result_file.unlink()
+
+        # 删除导出的 HTML 文件
+        html_file = Path(f"data/results/{task_id}.html")
+        if html_file.exists():
+            html_file.unlink()
+
+        # 删除临时目录 (PDF/EPUB 转换的中间文件)
+        temp_dir = Path(f"data/temp/{task_id}")
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir)
 
         # 从数据库删除
         return await self.db.delete_task(task_id)

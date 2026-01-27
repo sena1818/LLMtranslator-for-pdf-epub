@@ -66,12 +66,14 @@ class DocumentConverter:
 
         logger.info(f"正在转换 PDF: {pdf_path.name}")
         logger.info(f"命令: {' '.join(cmd)}")
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        # 修改: 不捕获输出，直接显示在终端，以便用户看到 marker 的进度条
+        # result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, check=False)
 
         if result.returncode != 0:
-            logger.error(f"PDF 转换失败: {result.stderr}")
-            logger.error(f"stdout: {result.stdout}")
-            raise RuntimeError(f"PDF 转换失败: {result.stderr or result.stdout}")
+            logger.error(f"PDF 转换失败 (退出码: {result.returncode})")
+            raise RuntimeError(f"PDF 转换失败")
 
         # 查找生成的 Markdown 文件 (marker 可能会在子目录中生成)
         # 1. 直接在 output_dir 中查找

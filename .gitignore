@@ -32,8 +32,10 @@ ENV/
 
 # 输入输出文件（不上传翻译内容和源文件）
 input/**
+output/**
 data/output/**
 data/uploads/**
+data/results/**
 data/temp/**
 output_final/**
 BookTrans/**
@@ -41,8 +43,10 @@ marker_output/**
 
 # 保留目录结构
 !input/.gitkeep
+!output/.gitkeep
 !data/output/.gitkeep
 !data/uploads/.gitkeep
+!data/results/.gitkeep
 !data/temp/.gitkeep
 !output_final/.gitkeep
 !BookTrans/.gitkeep
