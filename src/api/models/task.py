@@ -12,6 +12,7 @@ class TaskStatus(str, Enum):
     PENDING = "pending"
     PROCESSING = "processing"
     COMPLETED = "completed"
+    PARTIAL_SUCCESS = "partial_success"
     FAILED = "failed"
 
 

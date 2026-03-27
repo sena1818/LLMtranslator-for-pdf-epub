@@ -80,7 +80,7 @@ const TranslationPage: React.FC = () => {
     enabled: !!currentTaskId,
     refetchInterval: (query) => {
       const task = query.state.data;
-      if (task && (task.status === 'completed' || task.status === 'failed')) {
+      if (task && (task.status === 'completed' || task.status === 'partial_success' || task.status === 'failed')) {
         return false;
       }
       return 2000;
@@ -154,6 +154,7 @@ const TranslationPage: React.FC = () => {
       pending: { color: 'default', text: '等待中', icon: <ClockCircleOutlined /> },
       processing: { color: 'processing', text: '翻译中', icon: <ThunderboltOutlined spin /> },
       completed: { color: 'success', text: '已完成', icon: <CheckCircleOutlined /> },
+      partial_success: { color: 'warning', text: '部分完成', icon: <CheckCircleOutlined /> },
       failed: { color: 'error', text: '失败', icon: null },
     };
     const config = statusMap[status as keyof typeof statusMap] || statusMap.pending;
@@ -161,7 +162,9 @@ const TranslationPage: React.FC = () => {
   };
 
   // 统计数据
-  const completedTasks = taskListData?.tasks?.filter(t => t.status === 'completed').length || 0;
+  const completedTasks = taskListData?.tasks?.filter(
+    t => t.status === 'completed' || t.status === 'partial_success'
+  ).length || 0;
   const processingTasks = taskListData?.tasks?.filter(t => t.status === 'processing').length || 0;
 
   // 任务列表表格列配置
@@ -202,7 +205,7 @@ const TranslationPage: React.FC = () => {
           status={
             record.status === 'failed'
               ? 'exception'
-              : record.status === 'completed'
+              : (record.status === 'completed' || record.status === 'partial_success')
                 ? 'success'
                 : 'active'
           }
@@ -235,7 +238,7 @@ const TranslationPage: React.FC = () => {
       width: 200,
       render: (_: unknown, record: TranslationTask) => (
         <Space>
-          {record.status === 'completed' && record.result_url && (
+          {(record.status === 'completed' || record.status === 'partial_success') && record.result_url && (
             <>
               <Tooltip title="下载 Markdown">
                 <Button
@@ -247,19 +250,21 @@ const TranslationPage: React.FC = () => {
                   MD
                 </Button>
               </Tooltip>
-              <Tooltip title="下载双栏 HTML">
-                <Button
-                  size="small"
-                  style={{ background: '#52c41a', borderColor: '#52c41a', color: 'white' }}
-                  icon={<DownloadOutlined />}
-                  onClick={() => window.open(downloadResult(record.task_id, 'html'), '_blank')}
-                >
-                  HTML
-                </Button>
-              </Tooltip>
+              {record.bilingual && (
+                <Tooltip title="下载双栏 HTML">
+                  <Button
+                    size="small"
+                    style={{ background: '#52c41a', borderColor: '#52c41a', color: 'white' }}
+                    icon={<DownloadOutlined />}
+                    onClick={() => window.open(downloadResult(record.task_id, 'html'), '_blank')}
+                  >
+                    HTML
+                  </Button>
+                </Tooltip>
+              )}
             </>
           )}
-          {(record.status === 'completed' || record.status === 'failed') && (
+          {(record.status === 'completed' || record.status === 'partial_success' || record.status === 'failed') && (
             <Button
               size="small"
               danger
@@ -489,17 +494,52 @@ const TranslationPage: React.FC = () => {
                 >
                   下载 MD
                 </Button>
-                <Button
-                  size="small"
-                  style={{ background: '#52c41a', borderColor: '#52c41a', color: 'white' }}
-                  icon={<DownloadOutlined />}
-                  onClick={() => window.open(downloadResult(currentTask.task_id, 'html'), '_blank')}
-                >
-                  下载 HTML
-                </Button>
+                {currentTask.bilingual && (
+                  <Button
+                    size="small"
+                    style={{ background: '#52c41a', borderColor: '#52c41a', color: 'white' }}
+                    icon={<DownloadOutlined />}
+                    onClick={() => window.open(downloadResult(currentTask.task_id, 'html'), '_blank')}
+                  >
+                    下载 HTML
+                  </Button>
+                )}
               </Space>
             }
             type="success"
+            showIcon
+            closable
+            style={{ borderRadius: '8px' }}
+          />
+        )}
+
+        {currentTask && currentTask.status === 'partial_success' && (
+          <Alert
+            message="翻译部分完成"
+            description={
+              <Space>
+                <span>{currentTask.error || `文件 ${currentTask.filename} 有部分文本块翻译失败`}</span>
+                <Button
+                  type="primary"
+                  size="small"
+                  icon={<DownloadOutlined />}
+                  onClick={() => window.open(downloadResult(currentTask.task_id, 'md'), '_blank')}
+                >
+                  下载 MD
+                </Button>
+                {currentTask.bilingual && (
+                  <Button
+                    size="small"
+                    style={{ background: '#52c41a', borderColor: '#52c41a', color: 'white' }}
+                    icon={<DownloadOutlined />}
+                    onClick={() => window.open(downloadResult(currentTask.task_id, 'html'), '_blank')}
+                  >
+                    下载 HTML
+                  </Button>
+                )}
+              </Space>
+            }
+            type="warning"
             showIcon
             closable
             style={{ borderRadius: '8px' }}

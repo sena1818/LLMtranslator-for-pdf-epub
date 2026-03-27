@@ -25,6 +25,7 @@ class Database:
                     filename TEXT NOT NULL,
                     status TEXT NOT NULL,
                     glossary_id TEXT,
+                    bilingual INTEGER DEFAULT 0,
                     progress_current INTEGER DEFAULT 0,
                     progress_total INTEGER DEFAULT 0,
                     progress_percentage REAL DEFAULT 0.0,
@@ -36,18 +37,43 @@ class Database:
                     updated_at TEXT
                 )
             """)
+
+            async with db.execute("PRAGMA table_info(tasks)") as cursor:
+                columns = {row[1] for row in await cursor.fetchall()}
+
+            if "bilingual" not in columns:
+                await db.execute(
+                    "ALTER TABLE tasks ADD COLUMN bilingual INTEGER DEFAULT 0"
+                )
+
             await db.commit()
 
     async def save_task(self, task: TranslationTask):
         """保存任务"""
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("""
-                INSERT INTO tasks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO tasks (
+                    task_id,
+                    filename,
+                    status,
+                    glossary_id,
+                    bilingual,
+                    progress_current,
+                    progress_total,
+                    progress_percentage,
+                    progress_speed,
+                    progress_elapsed,
+                    result_url,
+                    error,
+                    created_at,
+                    updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 task.task_id,
                 task.filename,
                 task.status.value if isinstance(task.status, TaskStatus) else task.status,
                 task.glossary_id,
+                int(task.bilingual),
                 task.progress.current if task.progress else 0,
                 task.progress.total if task.progress else 0,
                 task.progress.percentage if task.progress else 0.0,
@@ -67,6 +93,7 @@ class Database:
             await db.execute("""
                 UPDATE tasks SET
                     status = ?,
+                    bilingual = ?,
                     progress_current = ?,
                     progress_total = ?,
                     progress_percentage = ?,
@@ -78,6 +105,7 @@ class Database:
                 WHERE task_id = ?
             """, (
                 task.status.value if isinstance(task.status, TaskStatus) else task.status,
+                int(task.bilingual),
                 task.progress.current if task.progress else 0,
                 task.progress.total if task.progress else 0,
                 task.progress.percentage if task.progress else 0.0,
@@ -139,6 +167,7 @@ class Database:
             filename=row["filename"],
             status=TaskStatus(row["status"]),
             glossary_id=row["glossary_id"],
+            bilingual=bool(row["bilingual"]) if "bilingual" in row.keys() else False,
             progress=TaskProgress(
                 current=row["progress_current"],
                 total=row["progress_total"],

@@ -158,21 +158,25 @@ class TranslationService:
             start_time = asyncio.get_event_loop().time()
 
             async def progress_callback(event: dict):
-                if event.get("status") == "completed":
+                if event.get("status") in {"completed", "failed"}:
                     task.progress.current += 1
                     elapsed = asyncio.get_event_loop().time() - start_time
                     task.progress.elapsed = elapsed
-                    task.progress.percentage = (task.progress.current / task.progress.total) * 100
+                    task.progress.percentage = (
+                        (task.progress.current / task.progress.total) * 100
+                        if task.progress.total > 0 else 100.0
+                    )
                     task.progress.speed = (task.progress.current / elapsed) * 60 if elapsed > 0 else 0
 
                     # 只有当进度整除 5 或完成时才打印详细日志，避免刷屏
                     if task.progress.current % 5 == 0 or task.progress.current == task.progress.total:
                         logger.info(f"⏳ 进度: {task.progress.current}/{task.progress.total} ({task.progress.percentage:.1f}%)")
 
+                    if event.get("status") == "failed":
+                        logger.error(f"❌ Chunk 翻译失败: {event.get('error')}")
+
                     # 更新数据库
                     await self.db.update_task(task)
-                elif event.get("status") == "failed":
-                    logger.error(f"❌ Chunk 翻译失败: {event.get('error')}")
 
             # 9. 执行翻译 (支持双语对照模式)
             logger.info("🎬 开始调用 LLM 进行翻译...")
@@ -183,12 +187,36 @@ class TranslationService:
                 bilingual=task.bilingual
             )
 
-            # 10. 标记完成
-            task.status = TaskStatus.COMPLETED
-            task.result_url = f"/api/files/results/{task_id}"
+            # 10. 根据成功率标记任务状态
+            failed_results = [result for result in results if not result.success]
+            failed_count = len(failed_results)
+            success_count = len(results) - failed_count
+
+            if failed_count == 0:
+                task.status = TaskStatus.COMPLETED
+                task.result_url = f"/api/files/results/{task_id}"
+                task.error = None
+            elif success_count == 0:
+                task.status = TaskStatus.FAILED
+                task.result_url = None
+                task.error = f"全部 {failed_count} 个文本块翻译失败"
+            else:
+                preview = ", ".join(str(result.chunk_index) for result in failed_results[:10])
+                if failed_count > 10:
+                    preview = f"{preview} ..."
+                task.status = TaskStatus.PARTIAL_SUCCESS
+                task.result_url = f"/api/files/results/{task_id}"
+                task.error = (
+                    f"{failed_count}/{len(results)} 个文本块翻译失败"
+                    f"；失败块索引: {preview}"
+                )
+
             task.updated_at = datetime.now()
             await self.db.update_task(task)
-            logger.info(f"✅ 翻译任务完成! 结果保存在: {output_path}")
+            logger.info(
+                f"✅ 翻译任务结束: status={task.status.value}, "
+                f"成功 {success_count} / 失败 {failed_count}, 结果保存在: {output_path}"
+            )
 
         except Exception as e:
             # 标记失败

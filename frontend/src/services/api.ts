@@ -27,7 +27,7 @@ export interface TaskProgress {
 export interface TranslationTask {
   task_id: string;
   filename: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
+  status: 'pending' | 'processing' | 'completed' | 'partial_success' | 'failed';
   glossary_id: string | null;
   bilingual: boolean;
   progress: TaskProgress;
