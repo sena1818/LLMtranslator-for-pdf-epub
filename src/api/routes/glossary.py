@@ -1,10 +1,14 @@
 """
 术语表 API 路由
 """
-from fastapi import APIRouter, HTTPException, UploadFile, File
-from typing import List, Dict, Optional
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 
 from ..services.glossary_service import GlossaryService
+from ..models.glossary import (
+    GlossaryCreateRequest,
+    GlossaryUpdateRequest,
+    GlossaryModifyRequest,
+)
 
 router = APIRouter(prefix="/api/glossary", tags=["glossary"])
 service = GlossaryService()
@@ -49,7 +53,7 @@ async def get_glossary(glossary_id: str):
 
 
 @router.post("/")
-async def create_glossary(name: str, terms: Dict[str, str] = None):
+async def create_glossary(payload: GlossaryCreateRequest):
     """
     创建新术语表
 
@@ -59,11 +63,11 @@ async def create_glossary(name: str, terms: Dict[str, str] = None):
         "terms": {"English": "中文"}
     }
     """
-    return await service.create_glossary(name, terms or {})
+    return await service.create_glossary(payload.name, payload.terms)
 
 
 @router.put("/{glossary_id}")
-async def update_glossary(glossary_id: str, terms: Dict[str, str]):
+async def update_glossary(glossary_id: str, payload: GlossaryUpdateRequest):
     """
     更新术语表内容 (全量更新)
 
@@ -72,18 +76,14 @@ async def update_glossary(glossary_id: str, terms: Dict[str, str]):
         "terms": {"English": "中文"}
     }
     """
-    success = await service.update_glossary(glossary_id, terms)
+    success = await service.update_glossary(glossary_id, payload.terms)
     if not success:
         raise HTTPException(status_code=404, detail="术语表不存在")
     return {"message": "更新成功"}
 
 
 @router.patch("/{glossary_id}/terms")
-async def modify_terms(
-    glossary_id: str,
-    add: Dict[str, str] = None,
-    remove: List[str] = None
-):
+async def modify_terms(glossary_id: str, payload: GlossaryModifyRequest):
     """
     增量修改术语 (单个增删)
 
@@ -93,7 +93,7 @@ async def modify_terms(
         "remove": ["Old Term"]
     }
     """
-    result = await service.modify_terms(glossary_id, add, remove)
+    result = await service.modify_terms(glossary_id, payload.add, payload.remove)
     if result is None:
         raise HTTPException(status_code=404, detail="术语表不存在")
     return {"message": "修改成功", "term_count": result}
@@ -109,7 +109,7 @@ async def delete_glossary(glossary_id: str):
 
 
 @router.post("/import")
-async def import_glossary(file: UploadFile = File(...), name: str = ""):
+async def import_glossary(file: UploadFile = File(...), name: str = Form("")):
     """
     导入 JSON 术语表
 

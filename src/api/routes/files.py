@@ -9,8 +9,11 @@ import sys
 # 添加项目根目录到 Python 路径
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 from src.services.export_service import ExportService
+from ..database.db import Database
+from ..models.task import TaskStatus
 
 router = APIRouter(prefix="/api/files", tags=["files"])
+db = Database()
 
 
 @router.get("/results/{task_id}")
@@ -31,6 +34,12 @@ async def download_result(
         raise HTTPException(status_code=404, detail="结果文件不存在")
 
     if format == "html":
+        task = await db.get_task(task_id)
+        if task and not task.bilingual:
+            raise HTTPException(status_code=400, detail="仅双语任务支持 HTML 双栏导出")
+        if task and task.status not in {TaskStatus.COMPLETED, TaskStatus.PARTIAL_SUCCESS}:
+            raise HTTPException(status_code=400, detail="任务尚未完成，无法导出 HTML")
+
         # 导出为 HTML 双栏格式
         html_path = Path(f"data/results/{task_id}.html")
 
