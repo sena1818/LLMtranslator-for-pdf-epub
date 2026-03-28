@@ -1,0 +1,46 @@
+common:
+  heading_classes:
+    calibre2: "##"
+    calibre3: "###"
+    calibre4: "####"
+    calibre5: "####"
+  heading_max_length: 60
+  unwrap_bracket_lines: true
+  bracket_line_max_length: 80
+
+epub:
+  strip_block_patterns:
+    - '(?ms)^(?:>\s*)?:::\s*\{#[^}\n]*\.mbp_pagebreak[^}\n]*\}\s*\n(?:>\s*)?:::\s*\n?'
+  strip_line_patterns:
+    - '(?m)^(?:>\s*)?:::\s*\{\}\s*$'
+    - '(?m)^(?:>\s*)?\[\]\{#[^}]+\}\s*$'
+    - '(?m)^(?:>\s*)?\[\s*(?:\u00a0|&nbsp;)?\s*\]\s*$'
+    - '(?m)^(?:>\s*)?.*<svg\b.*$'
+    - '(?m)^(?:>\s*)?.*</svg>.*$'
+    - '(?m)^(?:>\s*)?.*<image\b.*$'
+    - '(?m)^(?:>\s*)?\u00a0\s*$'
+
+mobi:
+  inherit_from:
+    - "epub"
+  strip_line_patterns:
+    - '(?m)^(?:>\s*)?\[\]\{#kindlepos[^}]*\}\s*$'
+    - '(?m)^(?:>\s*)?\{\.mbp_pagebreak\}\s*$'
+
+kindle:
+  inherit_from:
+    - "epub"
+    - "mobi"
+  strip_line_patterns:
+    - '(?m)^(?:>\s*)?\[\]\{#filepos\d+\}\s*$'
+    - '(?m)^(?:>\s*)?\[\]\{#page_\d+\}\s*$'
+
+pandoc:
+  inherit_from:
+    - "epub"
+  strip_line_patterns:
+    - '(?m)^(?:>\s*)?\[\]\{\.image[^}]*\}\s*$'
+    - '(?m)^(?:>\s*)?\{#?[A-Za-z0-9_\-\.]+\}\s*$'
+
+pdf:
+  strip_line_patterns: []

@@ -1,11 +1,13 @@
 """
 FastAPI 应用入口
 """
+import asyncio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 import logging
+import os
 import sys
 
 # 配置日志
@@ -20,6 +22,8 @@ logging.basicConfig(
 
 from .routes import translation, glossary, files
 from .database.db import Database
+from .worker import TaskWorker
+from ..utils.config_loader import get_config
 
 # 创建应用
 app = FastAPI(
@@ -42,27 +46,54 @@ app.include_router(translation.router)
 app.include_router(glossary.router)
 app.include_router(files.router)
 
-# 静态文件服务 (前端构建产物)
-if Path("frontend_dist").exists():
-    app.mount("/", StaticFiles(directory="frontend_dist", html=True), name="frontend")
+# 静态文件服务 (优先使用 Vite 最新构建产物)
+frontend_build_dir = None
+for candidate in [Path("frontend/dist"), Path("frontend_dist")]:
+    if candidate.exists():
+        frontend_build_dir = candidate
+        break
+
+if frontend_build_dir:
+    app.mount("/", StaticFiles(directory=str(frontend_build_dir), html=True), name="frontend")
 
 
 # 启动事件
 @app.on_event("startup")
 async def startup_event():
     """初始化数据库"""
+    config = get_config()
+    port = int(os.getenv("TRANSLATION_SERVER_PORT", str(config.server_port)))
     db = Database()
     await db.initialize()
     print("✅ 数据库初始化完成")
-    
-    # 重置中断的任务
-    from .services.translation_service import TranslationService
-    service = TranslationService()
-    reset_count = await service.reset_interrupted_tasks()
-    if reset_count > 0:
-        print(f"⚠️  重置了 {reset_count} 个因服务器重启而中断的任务")
+
+    inline_worker_enabled = os.getenv(
+        "TRANSLATION_INLINE_WORKER",
+        "1" if config.inline_worker_enabled else "0",
+    ) != "0"
+
+    if inline_worker_enabled:
+        app.state.worker = TaskWorker()
+        app.state.worker_task = asyncio.create_task(app.state.worker.run_forever())
+        print("🎯 已启动内联任务 worker")
+    else:
+        app.state.worker = None
+        app.state.worker_task = None
+        print("⏸️  内联 worker 已禁用，请单独运行 run_worker.py")
+
     print("✅ FastAPI 服务器启动成功")
-    print("📖 API 文档: http://localhost:8000/docs")
+    print(f"📖 API 文档: http://localhost:{port}/docs")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """优雅关闭内联 worker"""
+    worker = getattr(app.state, "worker", None)
+    worker_task = getattr(app.state, "worker_task", None)
+    if worker:
+        await worker.stop()
+    if worker_task:
+        await worker_task
 
 
 # 健康检查

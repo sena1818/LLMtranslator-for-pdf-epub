@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -108,7 +108,7 @@ class TranslationCache:
                     translation,
                     json.dumps(quality_report, ensure_ascii=False),
                     int(repaired),
-                    datetime.now(UTC).isoformat(),
+                    datetime.now(timezone.utc).isoformat(),
                 ),
             )
             await db.commit()

@@ -60,26 +60,15 @@ class TranslationService:
 
         return task
 
-    async def reset_interrupted_tasks(self):
-        """
-        重置因服务器重启而中断的任务
-        """
-        # 1. 获取所有状态为 "processing" 的任务
-        tasks, _ = await self.db.list_tasks(limit=1000)
-        reset_count = 0
-        
-        for task in tasks:
-            if task.status == TaskStatus.PROCESSING:
-                # 2. 标记为失败
-                task.status = TaskStatus.FAILED
-                task.error = "任务因服务器重启而中断 (Task interrupted by server restart)"
-                task.updated_at = datetime.now()
-                await self.db.update_task(task)
-                reset_count += 1
-                
-        return reset_count
+    async def claim_next_pending_task(self) -> Optional[TranslationTask]:
+        """认领一个待处理任务"""
+        return await self.db.claim_next_pending_task()
 
-    async def start_translation(self, task_id: str):
+    async def requeue_stale_tasks(self, stale_after_seconds: int = 900) -> int:
+        """重新排队长时间未更新的 processing 任务"""
+        return await self.db.requeue_stale_processing_tasks(stale_after_seconds)
+
+    async def start_translation(self, task_id: str, already_claimed: bool = False):
         """
         启动翻译 (后台任务)
         """
@@ -94,22 +83,29 @@ class TranslationService:
         try:
             logger.info(f"🚀 开始翻译任务: {task.filename} (ID: {task_id})")
             
-            # 更新状态为处理中
-            task.status = TaskStatus.PROCESSING
-            task.updated_at = datetime.now()
-            await self.db.update_task(task)
+            if not already_claimed:
+                # 兼容直接调用场景
+                task.status = TaskStatus.PROCESSING
+                task.updated_at = datetime.now()
+                await self.db.update_task(task)
 
             # 1. 获取文件路径
             file_path = Path(f"data/uploads/{task_id}_{task.filename}")
+            temp_dir = Path("data/temp") / task_id
 
             # 2. 文档转换（如果需要）
-            if file_path.suffix.lower() in ['.pdf', '.epub']:
+            if file_path.suffix.lower() in ['.pdf', '.epub', '.mobi']:
                 logger.info(f"📄 开始转换文档: {file_path.name}")
-                temp_dir = Path("data/temp") / task_id
                 temp_dir.mkdir(parents=True, exist_ok=True)
                 try:
-                    markdown_file = self.converter.convert(file_path, temp_dir)
-                    logger.info(f"✅ 文档转换成功: {markdown_file}")
+                    markdown_file = self._find_reusable_markdown(file_path, temp_dir)
+                    if markdown_file:
+                        logger.info(f"♻️ 复用已转换 Markdown: {markdown_file}")
+                    else:
+                        task.updated_at = datetime.now()
+                        await self.db.update_task(task)
+                        markdown_file = self.converter.convert(file_path, temp_dir)
+                        logger.info(f"✅ 文档转换成功: {markdown_file}")
                 except Exception as e:
                     logger.error(f"❌ 文档转换失败: {str(e)}")
                     raise RuntimeError(f"文档转换失败: {str(e)}")
@@ -122,6 +118,9 @@ class TranslationService:
             # 3. 读取文本
             if not markdown_file.exists():
                 raise RuntimeError(f"Markdown 文件不存在: {markdown_file}")
+
+            task.updated_at = datetime.now()
+            await self.db.update_task(task)
 
             with open(markdown_file, 'r', encoding='utf-8') as f:
                 text = f.read()
@@ -228,6 +227,21 @@ class TranslationService:
             task.error = str(e)
             task.updated_at = datetime.now()
             await self.db.update_task(task)
+
+    def _find_reusable_markdown(self, file_path: Path, temp_dir: Path) -> Optional[Path]:
+        """查找可复用的转换结果，避免中断后重复转换"""
+        if file_path.suffix.lower() not in {".epub", ".mobi"}:
+            return None
+
+        expected = temp_dir / f"{file_path.stem}.md"
+        if expected.exists() and expected.stat().st_size > 0:
+            return expected
+
+        md_files = sorted(
+            candidate for candidate in temp_dir.rglob("*.md")
+            if candidate.is_file() and candidate.stat().st_size > 0
+        )
+        return md_files[0] if md_files else None
 
     async def get_task(self, task_id: str) -> Optional[TranslationTask]:
         """获取任务"""
