@@ -5,6 +5,7 @@
 import asyncio
 import time
 import re
+import hashlib
 from typing import List, Dict, Optional, Callable
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from ..utils.config_loader import get_config
 from .chunk_planner import ChunkPlanner, TextChunk
 from .rate_limiter import RateLimiter
 from .output_manager import OutputManager
+from .translation_cache import TranslationCache
 from .validator import QualityReport, TranslationValidator
 
 
@@ -24,7 +26,7 @@ class TranslationResult:
     def __init__(self, chunk_index: int, original: str, translation: str,
                  success: bool, retry_count: int = 0, duration: float = 0.0,
                  chunk_id: str = "", quality_report: Optional[dict] = None,
-                 repaired: bool = False):
+                 repaired: bool = False, cached: bool = False):
         self.chunk_index = chunk_index
         self.original = original
         self.translation = translation
@@ -34,6 +36,7 @@ class TranslationResult:
         self.chunk_id = chunk_id
         self.quality_report = quality_report or {}
         self.repaired = repaired
+        self.cached = cached
 
 
 class TranslationEngine:
@@ -79,6 +82,8 @@ class TranslationEngine:
             untranslated_word_span=self.config.untranslated_word_span,
             max_glossary_checks=self.config.max_glossary_checks,
         )
+        self.cache = TranslationCache(self.config.root_dir / "data" / "translation_cache.db")
+        self.prompt_version = "v2"
 
     def plan_chunks(self, text: str) -> List[TextChunk]:
         """结构化切块"""
@@ -191,6 +196,21 @@ class TranslationEngine:
 
         return ChatPromptTemplate.from_template(template)
 
+    def _build_cache_key(self, chunk: TextChunk) -> str:
+        """构造缓存键，避免不同模型/术语表之间串用"""
+        glossary_payload = "\n".join(
+            f"{en}:{zh}" for en, zh in sorted(self.glossary.items())
+        )
+        payload = "|".join(
+            [
+                self.prompt_version,
+                self.config.model_name or "",
+                chunk.chunk_id,
+                glossary_payload,
+            ]
+        ).encode("utf-8")
+        return hashlib.sha1(payload).hexdigest()
+
     async def translate_chunk(
         self,
         chunk: TextChunk,
@@ -243,7 +263,16 @@ class TranslationEngine:
                         "duration": duration,
                         "quality_report": quality_report.to_dict(),
                         "repaired": repaired,
+                        "cached": False,
                     })
+
+                await self.cache.set(
+                    cache_key=self._build_cache_key(chunk),
+                    chunk_id=chunk.chunk_id,
+                    translation=translation,
+                    quality_report=quality_report.to_dict(),
+                    repaired=repaired,
+                )
 
                 return TranslationResult(
                     chunk_index=chunk.index,
@@ -255,6 +284,7 @@ class TranslationEngine:
                     chunk_id=chunk.chunk_id,
                     quality_report=quality_report.to_dict(),
                     repaired=repaired,
+                    cached=False,
                 )
 
             except Exception as e:
@@ -386,6 +416,7 @@ class TranslationEngine:
         # 1. 文本分块
         chunks = prepared_chunks or self.plan_chunks(text)
         total = len(chunks)
+        await self.cache.initialize()
 
         if progress_callback:
             await progress_callback({
@@ -398,7 +429,42 @@ class TranslationEngine:
 
         # 3. 准备任务列表
         tasks = []
+        results: List[TranslationResult] = []
         for chunk in chunks:
+            cache_entry = await self.cache.get(self._build_cache_key(chunk))
+            if cache_entry:
+                cached_result = TranslationResult(
+                    chunk_index=chunk.index,
+                    original=chunk.text,
+                    translation=cache_entry.translation,
+                    success=True,
+                    retry_count=0,
+                    duration=0.0,
+                    chunk_id=chunk.chunk_id,
+                    quality_report=cache_entry.quality_report,
+                    repaired=cache_entry.repaired,
+                    cached=True,
+                )
+                await output_manager.add_result(
+                    index=cached_result.chunk_index,
+                    content=cached_result.translation,
+                    success=True,
+                    original_text=chunk.text,
+                )
+                if progress_callback:
+                    await progress_callback({
+                        "chunk_index": chunk.index,
+                        "chunk_id": chunk.chunk_id,
+                        "status": "completed",
+                        "translation": cache_entry.translation,
+                        "duration": 0.0,
+                        "quality_report": cache_entry.quality_report,
+                        "repaired": cache_entry.repaired,
+                        "cached": True,
+                    })
+                results.append(cached_result)
+                continue
+
             tasks.append(
                 self._process_one_chunk(
                     chunk, output_manager, progress_callback
@@ -406,7 +472,8 @@ class TranslationEngine:
             )
 
         # 4. 并发执行
-        results = await asyncio.gather(*tasks)
+        live_results = await asyncio.gather(*tasks)
+        results.extend(live_results)
 
         return sorted(results, key=lambda r: r.chunk_index)
 
