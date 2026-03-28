@@ -12,9 +12,9 @@
 
 **核心特性**：
 - 🚀 异步并发处理（最高支持 10 个并发请求）
-- 🔍 术语一致性自动检查
-- 🔧 翻译质量自动修复
-- 💾 断点续传机制
+- 📚 术语表注入与约束
+- ⚠️ 失败块占位符输出
+- 🌗 双语 Markdown / HTML 导出
 - 📝 Markdown 格式完整保留
 
 ---
@@ -34,9 +34,9 @@ Markdown 文件
   ↓
 异步并发翻译 (DeepSeek V3)
   ↓
-质量检查 → (失败) → 自动修复
-  ↓ (通过)
 顺序输出管理器
+  ↓
+智能格式化
   ↓
 最终翻译文件
 ```
@@ -45,9 +45,9 @@ Markdown 文件
 
 1. **文本分块器** - 智能切割长文本，传递上下文（前一块最后 500 字符）
 2. **异步翻译引擎** - 并发处理 + Token Bucket 速率限制 + 指数退避重试
-3. **质量检查器** - 检测未翻译段落、术语遗漏、废话标记
-4. **自动修复器** - 针对失败块进行一次性修复
-5. **顺序输出管理器** - 解决异步乱序问题，保证顺序写入
+3. **Prompt + 术语表约束** - 将术语表和上文语境注入模型请求
+4. **顺序输出管理器** - 解决异步乱序问题，保证顺序写入
+5. **智能格式化器** - 清理 Pandoc 残留并修复 Markdown 排版
 
 ---
 
@@ -70,14 +70,13 @@ translator/
 │   ├── glossaries/                 # 术语表文件夹
 │   │   ├── glossary.json           # 通用术语表
 │   │   └── CPglossary.json         # Cyclonopedia 专用术语表（73 个术语）
-│   └── temp/                       # 临时文件（进度检查点等）
-│       └── progress_async.json     # 断点续传进度文件
-├── input/                          # 待翻译的 Markdown 源文件
+│   └── temp/                       # 临时文件（文档转换中间产物等）
+├── input/                          # 待翻译源文件（历史目录）
 ├── output_final/                   # 翻译完成的输出文件
 ├── marker_output/                  # EPUB/PDF 提取的资源（图片等）
 ├── logs/                           # 运行日志
-│   └── translation_async.log       # 翻译详细日志
-├── tests/                          # 测试文件（待添加）
+│   └── translation.log             # 翻译详细日志
+├── tests/                          # unittest 回归测试
 ├── translate.py                    # ⭐ 主入口脚本（完整流程）
 ├── .env                            # API 密钥配置
 └── requirements.txt                # Python 依赖（待生成）
@@ -114,20 +113,14 @@ api:
     temperature: 0.3             # 翻译创造性（0-1）
 ```
 
-### 进度管理
+### 日志与重跑
 
 ```bash
-# 查看当前进度
-cat data/temp/progress_async.json
-
-# 从检查点恢复（自动）
+# 当前主流程中断后会从头重新运行
 python translate.py input.md -o output.md --skip-conversion
 
-# 重置进度（从头开始）
-rm data/temp/progress_async.json
-
 # 查看实时日志
-tail -f logs/translation_async.log
+tail -f logs/translation.log
 ```
 
 ---
@@ -160,10 +153,10 @@ concurrency:
 
 ### 翻译在某个索引处卡住
 
-系统会自动为失败块写入占位符，不会阻塞流程。查看失败块：
+系统会自动为失败块写入占位符，不会阻塞流程。请直接查看输出文件中的失败占位符和主日志：
 
 ```bash
-cat data/temp/progress_async.json | grep failed
+grep "翻译失败" logs/translation.log
 ```
 
 ### 图片路径失效
@@ -192,7 +185,7 @@ python scripts/fixpath.py
 
 1. 编辑 `data/glossaries/glossary.json`
 2. 运行翻译时指定：`-g data/glossaries/glossary.json`
-3. QA Checker 会自动验证术语一致性（检查前 5 个术语）
+3. 当前主流程会将术语表直接注入 Prompt，输出后建议人工抽查关键术语
 
 ---
 
@@ -210,8 +203,8 @@ python translate.py BookTrans/Cyclonopedia.epub \
   -o output_final/Cyclonopedia_CN.md \
   -g data/glossaries/CPglossary.json
 
-# 4. 监控进度
-tail -f logs/translation_async.log
+# 4. 监控日志
+tail -f logs/translation.log
 ```
 
 ---

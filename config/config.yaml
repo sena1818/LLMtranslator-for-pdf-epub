@@ -24,7 +24,8 @@ concurrency:
 # 文本分块
 text_splitting:
   chunk_size: 2000
-  chunk_overlap: 0
+  chunk_overlap: 200
+  context_window: 800
   separators: ["\n\n", "\n", ".", "!", "?", " ", ""]
 
 # 路径配置 (相对于项目根目录)
@@ -44,6 +45,8 @@ logging:
 quality:
   max_fix_attempts: 1
   enable_qa_check: true
+  untranslated_word_span: 12
+  max_glossary_checks: 25
   qa_checks:
     - "terminology"  # 术语一致性
     - "untranslated"  # 未翻译检测

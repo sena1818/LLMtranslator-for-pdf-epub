@@ -114,6 +114,36 @@ class Config:
         """获取文本块大小"""
         return self.get("text_splitting.chunk_size", 2000)
 
+    @property
+    def chunk_overlap(self) -> int:
+        """获取上下文重叠窗口"""
+        return self.get("text_splitting.chunk_overlap", 0)
+
+    @property
+    def context_window(self) -> int:
+        """获取传给模型的上一块上下文窗口"""
+        return self.get("text_splitting.context_window", 800)
+
+    @property
+    def enable_qa_check(self) -> bool:
+        """是否启用质量检查"""
+        return self.get("quality.enable_qa_check", True)
+
+    @property
+    def max_fix_attempts(self) -> int:
+        """获取最大修复次数"""
+        return self.get("quality.max_fix_attempts", 1)
+
+    @property
+    def untranslated_word_span(self) -> int:
+        """未翻译英文阈值"""
+        return self.get("quality.untranslated_word_span", 12)
+
+    @property
+    def max_glossary_checks(self) -> int:
+        """每块最多检查多少术语"""
+        return self.get("quality.max_glossary_checks", 25)
+
 
 # 全局配置实例
 _config = None
