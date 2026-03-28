@@ -70,6 +70,12 @@ class Config:
         return self.root_dir
 
     @property
+    def artifact_rules_path(self) -> Path:
+        """源文件残留规则库路径"""
+        relative_path = self.get("paths.artifact_rules", "config/artifact_rules.yaml")
+        return self.root_dir / relative_path
+
+    @property
     def api_key(self) -> str:
         """获取 API Key (优先从环境变量)"""
         return os.getenv("SILICONFLOW_API_KEY") or os.getenv("OPENAI_API_KEY")
@@ -143,6 +149,71 @@ class Config:
     def max_glossary_checks(self) -> int:
         """每块最多检查多少术语"""
         return self.get("quality.max_glossary_checks", 25)
+
+    @property
+    def worker_poll_interval(self) -> float:
+        """worker 轮询间隔"""
+        return float(self.get("worker.poll_interval_seconds", 2.0))
+
+    @property
+    def worker_stale_after(self) -> int:
+        """多久判定 processing 任务为陈旧"""
+        return int(self.get("worker.stale_after_seconds", 900))
+
+    @property
+    def inline_worker_enabled(self) -> bool:
+        """是否默认启用 API 内联 worker"""
+        return bool(self.get("worker.inline_enabled", True))
+
+    @property
+    def worker_max_parallel_tasks(self) -> int:
+        """单个 worker 进程允许并发处理的任务数"""
+        return int(self.get("worker.max_parallel_tasks", 1))
+
+    @property
+    def worker_processes(self) -> int:
+        """默认启动多少个 worker 进程"""
+        return int(self.get("worker.processes", 1))
+
+    @property
+    def server_reload(self) -> bool:
+        """是否启用开发热重载"""
+        return bool(self.get("server.reload", False))
+
+    @property
+    def server_port(self) -> int:
+        """Web 服务端口"""
+        return int(self.get("server.port", 8000))
+
+    @property
+    def server_reload_dirs(self) -> list[str]:
+        """热重载监听目录"""
+        return list(self.get("server.reload_dirs", ["src", "frontend"]))
+
+    @property
+    def multi_agent_enabled(self) -> bool:
+        """是否启用三角色多 agent 流水线"""
+        return bool(self.get("multi_agent.enabled", True))
+
+    @property
+    def analyst_temperature(self) -> float:
+        """文档分析 agent 温度"""
+        return float(self.get("multi_agent.analyst_temperature", 0.1))
+
+    @property
+    def analyst_max_chars(self) -> int:
+        """文档分析最大采样字符数"""
+        return int(self.get("multi_agent.analyst_max_chars", 12000))
+
+    @property
+    def analyst_max_sections(self) -> int:
+        """文档分析最大章节数"""
+        return int(self.get("multi_agent.analyst_max_sections", 12))
+
+    @property
+    def analyst_max_term_hints(self) -> int:
+        """文档分析最多返回多少术语提示"""
+        return int(self.get("multi_agent.analyst_max_term_hints", 12))
 
 
 # 全局配置实例

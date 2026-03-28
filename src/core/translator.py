@@ -3,9 +3,12 @@
 重构自 scripts/async_translator.py
 """
 import asyncio
+import json
+import logging
 import time
 import re
 import hashlib
+from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Callable
 from pathlib import Path
 
@@ -19,6 +22,50 @@ from .rate_limiter import RateLimiter
 from .output_manager import OutputManager
 from .translation_cache import TranslationCache
 from .validator import QualityReport, TranslationValidator
+
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class DocumentProfile:
+    """文档分析 agent 产出的全局上下文"""
+
+    summary: str = ""
+    style_notes: List[str] = field(default_factory=list)
+    terminology_hints: List[str] = field(default_factory=list)
+    section_overview: List[str] = field(default_factory=list)
+
+    @classmethod
+    def empty(cls) -> "DocumentProfile":
+        return cls()
+
+    @property
+    def fingerprint(self) -> str:
+        payload = "|".join(
+            [
+                self.summary,
+                "\n".join(self.style_notes),
+                "\n".join(self.terminology_hints),
+                "\n".join(self.section_overview),
+            ]
+        ).encode("utf-8")
+        return hashlib.sha1(payload).hexdigest()[:12]
+
+    def to_prompt_text(self) -> str:
+        if not any([self.summary, self.style_notes, self.terminology_hints, self.section_overview]):
+            return "无额外文档级分析。"
+
+        parts = []
+        if self.summary:
+            parts.append(f"文档摘要: {self.summary}")
+        if self.style_notes:
+            parts.append("风格约束:\n" + "\n".join(f"- {item}" for item in self.style_notes))
+        if self.terminology_hints:
+            parts.append("术语提示:\n" + "\n".join(f"- {item}" for item in self.terminology_hints))
+        if self.section_overview:
+            parts.append("章节概览:\n" + "\n".join(f"- {item}" for item in self.section_overview))
+        return "\n\n".join(parts)
 
 
 class TranslationResult:
@@ -66,6 +113,12 @@ class TranslationEngine:
             api_key=self.config.api_key,
             base_url=self.config.api_base_url
         )
+        self.llm_analyst = ChatOpenAI(
+            model=self.config.model_name,
+            temperature=self.config.analyst_temperature,
+            api_key=self.config.api_key,
+            base_url=self.config.api_base_url
+        )
 
         # 初始化组件
         self.rate_limiter = RateLimiter(
@@ -83,7 +136,8 @@ class TranslationEngine:
             max_glossary_checks=self.config.max_glossary_checks,
         )
         self.cache = TranslationCache(self.config.root_dir / "data" / "translation_cache.db")
-        self.prompt_version = "v2"
+        self.document_profile = DocumentProfile.empty()
+        self.prompt_version = "v3"
 
     def plan_chunks(self, text: str) -> List[TextChunk]:
         """结构化切块"""
@@ -161,21 +215,28 @@ class TranslationEngine:
 
         return text
 
-    def build_prompt(self, text: str, context: str = "") -> ChatPromptTemplate:
+    def build_prompt(self, chunk: TextChunk, document_profile: Optional[DocumentProfile] = None) -> ChatPromptTemplate:
         """
         构建翻译 Prompt
 
         Args:
-            text: 待翻译文本
-            context: 上文语境
+            chunk: 待翻译文本块
+            document_profile: 文档级分析信息
 
         Returns:
             Prompt 模板
         """
+        profile = document_profile or DocumentProfile.empty()
         template = """你是专业的后现代哲学翻译家,正在翻译学术文本。
+
+【文档分析员备忘】:
+{document_profile}
 
 【核心术语表】(必须严格遵守):
 {glossary}
+
+【当前章节】:
+{section_title}
 
 【上文语境】:
 {context}
@@ -196,6 +257,89 @@ class TranslationEngine:
 
         return ChatPromptTemplate.from_template(template)
 
+    async def analyze_document(
+        self,
+        text: str,
+        chunks: List[TextChunk],
+    ) -> DocumentProfile:
+        """文档分析 agent：提炼整本文档的风格与术语上下文"""
+        if not getattr(self.config, "multi_agent_enabled", False):
+            return DocumentProfile.empty()
+
+        unique_sections = []
+        for chunk in chunks:
+            title = " > ".join(chunk.section_path) if chunk.section_path else chunk.section_title
+            if title and title not in unique_sections:
+                unique_sections.append(title)
+            if len(unique_sections) >= self.config.analyst_max_sections:
+                break
+
+        excerpt = text[: self.config.analyst_max_chars]
+        analyst_prompt = ChatPromptTemplate.from_template(
+            """你是翻译团队中的“文档分析员”。请基于以下文档片段和章节信息，为后续翻译提供全局指导。
+
+输出必须是 JSON 对象，格式如下：
+{{
+  "summary": "一句到三句的文档摘要",
+  "style_notes": ["风格提示1", "风格提示2"],
+  "terminology_hints": ["术语提示1", "术语提示2"],
+  "section_overview": ["章节1", "章节2"]
+}}
+
+要求：
+1. 不要输出 JSON 以外的任何文字
+2. style_notes 最多 4 条
+3. terminology_hints 最多 {max_term_hints} 条
+4. section_overview 只保留最关键的章节线索
+
+【章节列表】:
+{sections}
+
+【文档片段】:
+{excerpt}
+"""
+        )
+        chain = analyst_prompt | self.llm_analyst | StrOutputParser()
+
+        try:
+            raw = await chain.ainvoke(
+                {
+                    "max_term_hints": getattr(self.config, "analyst_max_term_hints", 12),
+                    "sections": "\n".join(f"- {item}" for item in unique_sections) or "- Document Root",
+                    "excerpt": excerpt,
+                }
+            )
+            return self._parse_document_profile(raw)
+        except Exception as exc:
+            logger.warning("文档分析 agent 失败，退化为空 profile: %s", exc)
+            return DocumentProfile.empty()
+
+    def _parse_document_profile(self, raw: str) -> DocumentProfile:
+        """解析文档分析 agent 返回的 JSON"""
+        try:
+            payload_text = raw.strip()
+            if not payload_text.startswith("{"):
+                match = re.search(r"\{[\s\S]*\}", payload_text)
+                if match:
+                    payload_text = match.group(0)
+            data = json.loads(payload_text)
+        except Exception as exc:
+            logger.warning("文档分析结果解析失败，退化为空 profile: %s", exc)
+            return DocumentProfile.empty()
+
+        return DocumentProfile(
+            summary=str(data.get("summary", "")).strip(),
+            style_notes=[str(item).strip() for item in data.get("style_notes", []) if str(item).strip()][:4],
+            terminology_hints=[
+                str(item).strip()
+                for item in data.get("terminology_hints", [])
+                if str(item).strip()
+            ][: getattr(self.config, "analyst_max_term_hints", 12)],
+            section_overview=[
+                str(item).strip() for item in data.get("section_overview", []) if str(item).strip()
+            ][: getattr(self.config, "analyst_max_sections", 12)],
+        )
+
     def _build_cache_key(self, chunk: TextChunk) -> str:
         """构造缓存键，避免不同模型/术语表之间串用"""
         glossary_payload = "\n".join(
@@ -206,6 +350,7 @@ class TranslationEngine:
                 self.prompt_version,
                 self.config.model_name or "",
                 chunk.chunk_id,
+                self.document_profile.fingerprint,
                 glossary_payload,
             ]
         ).encode("utf-8")
@@ -228,7 +373,7 @@ class TranslationEngine:
         """
         await self.rate_limiter.acquire()
 
-        prompt = self.build_prompt(chunk.text, chunk.context_text)
+        prompt = self.build_prompt(chunk, self.document_profile)
         chain = prompt | self.llm_translator | StrOutputParser()
 
         # 重试逻辑
@@ -239,7 +384,9 @@ class TranslationEngine:
                 start_time = time.time()
 
                 translation = await chain.ainvoke({
+                    "document_profile": self.document_profile.to_prompt_text(),
                     "glossary": "\n".join([f"- {en}: {zh}" for en, zh in self.glossary.items()]),
+                    "section_title": " > ".join(chunk.section_path) if chunk.section_path else chunk.section_title,
                     "context": chunk.context_text,
                     "text": chunk.text
                 })
@@ -371,6 +518,9 @@ class TranslationEngine:
 【发现的问题】:
 {issues}
 
+【文档分析员备忘】:
+{document_profile}
+
 【术语表】(必须严格遵守):
 {glossary}
 
@@ -390,6 +540,7 @@ class TranslationEngine:
             "original": chunk.text,
             "translation": translation,
             "issues": issues_text,
+            "document_profile": self.document_profile.to_prompt_text(),
             "glossary": "\n".join([f"- {en}: {zh}" for en, zh in self.glossary.items()]),
         })
 
@@ -416,6 +567,10 @@ class TranslationEngine:
         # 1. 文本分块
         chunks = prepared_chunks or self.plan_chunks(text)
         total = len(chunks)
+        if hasattr(self, "analyze_document"):
+            self.document_profile = await self.analyze_document(text, chunks)
+        else:
+            self.document_profile = DocumentProfile.empty()
         await self.cache.initialize()
 
         if progress_callback:

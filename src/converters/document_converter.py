@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Optional
 import logging
 
+from ..services.epub_artifact_cleaner import EpubArtifactCleaner
+
 logger = logging.getLogger(__name__)
 
 
@@ -14,6 +16,7 @@ class DocumentConverter:
     """文档转换器"""
 
     def __init__(self):
+        self.epub_cleaner = EpubArtifactCleaner()
         self._check_dependencies()
 
     def _check_dependencies(self):
@@ -103,7 +106,8 @@ class DocumentConverter:
     def epub_to_markdown(
         self,
         epub_path: Path,
-        output_dir: Path
+        output_dir: Path,
+        source_type: str = "epub",
     ) -> Optional[Path]:
         """
         EPUB 转 Markdown (使用 pandoc)
@@ -140,6 +144,11 @@ class DocumentConverter:
             return None
 
         if md_file.exists():
+            with open(md_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+            cleaned = self.epub_cleaner.clean(content, source_type=source_type)
+            with open(md_file, 'w', encoding='utf-8') as f:
+                f.write(cleaned)
             logger.info(f"EPUB 转换成功: {md_file}")
             return md_file
 
@@ -164,8 +173,10 @@ class DocumentConverter:
 
         if suffix == '.pdf':
             return self.pdf_to_markdown(input_path, output_dir)
-        elif suffix in ['.epub', '.mobi']:
-            return self.epub_to_markdown(input_path, output_dir)
+        elif suffix == '.epub':
+            return self.epub_to_markdown(input_path, output_dir, source_type="epub")
+        elif suffix == '.mobi':
+            return self.epub_to_markdown(input_path, output_dir, source_type="mobi")
         elif suffix in ['.md', '.markdown']:
             logger.info(f"文件已经是 Markdown 格式: {input_path}")
             return input_path

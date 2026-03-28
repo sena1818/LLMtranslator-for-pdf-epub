@@ -35,11 +35,22 @@ paths:
   temp: "data/temp"
   glossaries: "data/glossaries"
   logs: "logs"
+  artifact_rules: "config/artifact_rules.yaml"
 
 # 日志配置
 logging:
   level: "INFO"
   format: "%(asctime)s - [%(levelname)s] - %(message)s"
+
+# Web 服务配置
+server:
+  port: 8000
+  reload: false
+  reload_dirs:
+    - "src"
+    - "frontend"
+    - "run_server.py"
+    - "run_worker.py"
 
 # 翻译质量控制
 quality:
@@ -51,3 +62,19 @@ quality:
     - "terminology"  # 术语一致性
     - "untranslated"  # 未翻译检测
     - "format"  # 格式保留
+
+# Worker 队列配置
+worker:
+  inline_enabled: true
+  poll_interval_seconds: 2
+  stale_after_seconds: 900
+  max_parallel_tasks: 1
+  processes: 1
+
+# 三角色多 agent 协作
+multi_agent:
+  enabled: true
+  analyst_temperature: 0.1
+  analyst_max_chars: 12000
+  analyst_max_sections: 12
+  analyst_max_term_hints: 12

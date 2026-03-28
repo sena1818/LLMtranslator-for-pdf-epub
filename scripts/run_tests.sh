@@ -7,7 +7,7 @@ RUN_FRONTEND_BUILD="${1:-}"
 cd "$ROOT_DIR"
 
 echo "[1/3] Python 语法检查"
-python3 -m compileall src tests translate.py run_server.py >/dev/null
+python3 -m compileall src tests translate.py run_server.py run_worker.py >/dev/null
 
 echo "[2/3] 后端回归测试"
 python3 -m unittest discover -s tests -v

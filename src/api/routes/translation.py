@@ -1,7 +1,7 @@
 """
 翻译任务 API 路由
 """
-from fastapi import APIRouter, UploadFile, File, Form, BackgroundTasks, HTTPException
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from typing import Optional
 
 from ..services.translation_service import TranslationService
@@ -15,7 +15,6 @@ async def create_translation_task(
     file: UploadFile = File(...),
     glossary_id: Optional[str] = Form(None),
     bilingual: Optional[bool] = Form(False),
-    background_tasks: BackgroundTasks = None
 ):
     """
     创建翻译任务
@@ -35,9 +34,6 @@ async def create_translation_task(
     """
     content = await file.read()
     task = await service.create_task(content, file.filename, glossary_id, bilingual)
-
-    # 后台启动翻译
-    background_tasks.add_task(service.start_translation, task.task_id)
 
     return task.to_dict()
 
