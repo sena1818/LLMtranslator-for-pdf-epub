@@ -138,7 +138,7 @@ class TranslationService:
             engine = TranslationEngine(glossary=glossary)
 
             # 6. 文本分块
-            chunks = engine.split_text(text)
+            chunks = engine.plan_chunks(text)
             task.progress.total = len(chunks)
             await self.db.update_task(task)
             logger.info(f"✂️ 文本已分块: {len(chunks)} chunks")
@@ -184,7 +184,8 @@ class TranslationService:
                 text=text,
                 output_path=output_path,
                 progress_callback=progress_callback,
-                bilingual=task.bilingual
+                bilingual=task.bilingual,
+                prepared_chunks=chunks,
             )
 
             # 10. 根据成功率标记任务状态
@@ -215,7 +216,9 @@ class TranslationService:
             await self.db.update_task(task)
             logger.info(
                 f"✅ 翻译任务结束: status={task.status.value}, "
-                f"成功 {success_count} / 失败 {failed_count}, 结果保存在: {output_path}"
+                f"成功 {success_count} / 失败 {failed_count}, "
+                f"修复 {sum(1 for result in results if getattr(result, 'repaired', False))}, "
+                f"结果保存在: {output_path}"
             )
 
         except Exception as e:

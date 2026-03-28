@@ -160,7 +160,7 @@ class TranslationPipeline:
         engine = TranslationEngine(glossary=glossary)
 
         # 步骤 5: 文本分块
-        chunks = engine.split_text(text)
+        chunks = engine.plan_chunks(text)
         logger.info(f"✂️ 文本分块完成: {len(chunks)} 个块")
 
         # 步骤 6: 确定输出路径
@@ -212,7 +212,8 @@ class TranslationPipeline:
             text=text,
             output_path=output_file,
             progress_callback=progress_callback,
-            bilingual=bilingual
+            bilingual=bilingual,
+            prepared_chunks=chunks,
         )
 
         # 步骤 9: 智能格式化清理
@@ -229,6 +230,7 @@ class TranslationPipeline:
         logger.info(f"📈 平均速度: {len(chunks)/(elapsed/60):.1f} chunks/分钟")
         logger.info(f"✅ 成功: {completed} 个")
         logger.info(f"❌ 失败: {failed} 个")
+        logger.info(f"🔧 自动修复: {sum(1 for result in results if getattr(result, 'repaired', False))} 个")
         logger.info(f"💾 输出文件: {output_file}")
         logger.info("="*60)
 

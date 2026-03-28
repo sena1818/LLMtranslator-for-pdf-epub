@@ -1,0 +1,261 @@
+"""
+结构化分块器
+
+目标：
+- 识别 Markdown 标题，保留章节层级
+- 尽量避免跨章节切块
+- 为每个 chunk 生成稳定 ID 和上下文元数据
+"""
+from __future__ import annotations
+
+import hashlib
+import re
+from dataclasses import dataclass
+from typing import List, Optional
+
+
+@dataclass
+class TextBlock:
+    """Markdown 结构块"""
+
+    text: str
+    section_path: List[str]
+    is_heading: bool = False
+
+
+@dataclass
+class TextChunk:
+    """结构化文本块"""
+
+    index: int
+    chunk_id: str
+    text: str
+    section_path: List[str]
+    section_title: str
+    context_text: str
+
+
+class ChunkPlanner:
+    """章节感知的文本分块器"""
+
+    def __init__(self, chunk_size: int = 2000, context_window: int = 800):
+        self.chunk_size = chunk_size
+        self.context_window = context_window
+
+    def plan(self, text: str) -> List[TextChunk]:
+        """将完整文档切成结构化 chunk"""
+        blocks = self._extract_blocks(text)
+        raw_chunks = self._pack_blocks(blocks)
+
+        chunks: List[TextChunk] = []
+        previous_text = ""
+        previous_section_title = ""
+
+        for index, raw in enumerate(raw_chunks):
+            section_title = raw["section_path"][-1] if raw["section_path"] else "Document Root"
+            context_text = self._build_context(
+                previous_text=previous_text,
+                section_path=raw["section_path"],
+                previous_section_title=previous_section_title,
+            )
+            chunk_id = self._build_chunk_id(index, raw["section_path"], raw["text"])
+
+            chunks.append(
+                TextChunk(
+                    index=index,
+                    chunk_id=chunk_id,
+                    text=raw["text"],
+                    section_path=raw["section_path"],
+                    section_title=section_title,
+                    context_text=context_text,
+                )
+            )
+
+            previous_text = raw["text"]
+            previous_section_title = section_title
+
+        return chunks
+
+    def _extract_blocks(self, text: str) -> List[TextBlock]:
+        """按标题、代码块与空行提取结构块"""
+        lines = text.splitlines()
+        blocks: List[TextBlock] = []
+        heading_stack: List[str] = []
+        buffer: List[str] = []
+        in_code_fence = False
+
+        def flush_buffer():
+            if buffer:
+                block_text = "\n".join(buffer).strip("\n")
+                if block_text.strip():
+                    blocks.append(
+                        TextBlock(text=block_text, section_path=heading_stack.copy())
+                    )
+                buffer.clear()
+
+        for line in lines:
+            stripped = line.strip()
+
+            if re.match(r"^```", stripped):
+                if not in_code_fence:
+                    flush_buffer()
+                    in_code_fence = True
+                    buffer.append(line)
+                else:
+                    buffer.append(line)
+                    flush_buffer()
+                    in_code_fence = False
+                continue
+
+            if in_code_fence:
+                buffer.append(line)
+                continue
+
+            heading_match = re.match(r"^(#{1,6})\s+(.*)$", line)
+            if heading_match:
+                flush_buffer()
+                level = len(heading_match.group(1))
+                title = heading_match.group(2).strip()
+                heading_stack = heading_stack[: level - 1]
+                heading_stack.append(title)
+                blocks.append(
+                    TextBlock(
+                        text=line.strip(),
+                        section_path=heading_stack.copy(),
+                        is_heading=True,
+                    )
+                )
+                continue
+
+            if stripped == "":
+                flush_buffer()
+                continue
+
+            buffer.append(line)
+
+        flush_buffer()
+        return blocks
+
+    def _pack_blocks(self, blocks: List[TextBlock]) -> List[dict]:
+        """将结构块组装成目标大小的 chunk"""
+        raw_chunks: List[dict] = []
+        current_lines: List[str] = []
+        current_section_path: Optional[List[str]] = None
+
+        def flush_chunk():
+            nonlocal current_lines, current_section_path
+            if current_lines:
+                text = "\n\n".join(current_lines).strip()
+                if text:
+                    raw_chunks.append(
+                        {
+                            "text": text,
+                            "section_path": current_section_path.copy() if current_section_path else [],
+                        }
+                    )
+                current_lines = []
+                current_section_path = None
+
+        for block in blocks:
+            block_section = block.section_path.copy()
+            block_text = block.text.strip()
+
+            if not block_text:
+                continue
+
+            candidate_lines = current_lines + [block_text]
+            candidate_text = "\n\n".join(candidate_lines)
+            section_changed = current_section_path is not None and block_section != current_section_path
+            would_overflow = len(candidate_text) > self.chunk_size and bool(current_lines)
+
+            if section_changed or would_overflow or (block.is_heading and current_lines):
+                flush_chunk()
+
+            if current_section_path is None:
+                current_section_path = block_section
+
+            if len(block_text) > self.chunk_size:
+                flush_chunk()
+                for piece in self._split_oversized_block(block_text):
+                    raw_chunks.append(
+                        {
+                            "text": piece,
+                            "section_path": block_section,
+                        }
+                    )
+                continue
+
+            current_lines.append(block_text)
+
+        flush_chunk()
+        return raw_chunks
+
+    def _split_oversized_block(self, text: str) -> List[str]:
+        """对超长单块做降级切分"""
+        separators = ["\n\n", "\n", "。", "！", "？", ". ", "! ", "? ", " "]
+        pieces = [text]
+
+        for separator in separators:
+            next_pieces: List[str] = []
+            changed = False
+            for piece in pieces:
+                if len(piece) <= self.chunk_size:
+                    next_pieces.append(piece)
+                    continue
+
+                parts = piece.split(separator)
+                if len(parts) == 1:
+                    next_pieces.append(piece)
+                    continue
+
+                changed = True
+                current = ""
+                for part in parts:
+                    candidate = f"{current}{separator if current else ''}{part}".strip()
+                    if current and len(candidate) > self.chunk_size:
+                        next_pieces.append(current.strip())
+                        current = part
+                    else:
+                        current = candidate
+                if current.strip():
+                    next_pieces.append(current.strip())
+
+            pieces = next_pieces
+            if changed and all(len(piece) <= self.chunk_size for piece in pieces):
+                return pieces
+
+        final_pieces: List[str] = []
+        for piece in pieces:
+            if len(piece) <= self.chunk_size:
+                final_pieces.append(piece)
+                continue
+            for start in range(0, len(piece), self.chunk_size):
+                final_pieces.append(piece[start:start + self.chunk_size])
+
+        return final_pieces
+
+    def _build_context(
+        self,
+        previous_text: str,
+        section_path: List[str],
+        previous_section_title: str,
+    ) -> str:
+        """构造传给模型的上下文"""
+        parts: List[str] = []
+
+        if section_path:
+            parts.append("当前章节: " + " > ".join(section_path))
+
+        if previous_section_title and (not section_path or previous_section_title != section_path[-1]):
+            parts.append(f"上一块章节: {previous_section_title}")
+
+        if previous_text:
+            parts.append("上一块末尾:\n" + previous_text[-self.context_window :])
+
+        return "\n\n".join(parts).strip()
+
+    def _build_chunk_id(self, index: int, section_path: List[str], text: str) -> str:
+        """构造稳定 chunk id"""
+        payload = f"{index}|{' > '.join(section_path)}|{text}".encode("utf-8")
+        digest = hashlib.sha1(payload).hexdigest()[:12]
+        return f"chunk-{index:04d}-{digest}"

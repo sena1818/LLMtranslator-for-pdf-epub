@@ -8,13 +8,16 @@
 ## ✨ 核心特性
 
 - 🚀 **异步并发翻译** - 最高支持 10 个并发请求，速度提升 10 倍
-- 🔍 **术语一致性检查** - 自动验证专业术语翻译准确性
-- 🔧 **质量自动修复** - 智能检测并修正翻译质量问题
-- 💾 **断点续传** - 支持中断恢复，不怕意外中断
+- 🧩 **章节感知分块** - 按 Markdown 标题与结构块规划 chunk，减少跨章节漂移
+- 🆔 **稳定 Chunk ID** - 每个 chunk 自带结构化元数据，便于缓存、恢复和调试
+- 📚 **术语表约束** - 在 Prompt 中强制注入术语表，帮助保持术语一致
+- 🛡️ **质量校验与选择性修复** - 自动检测未翻译英文、术语遗漏和 Markdown 结构问题，只对高风险块触发修复
+- ⚠️ **失败块保底输出** - 单个 chunk 失败时写入占位符，不阻塞整体产出
 - 📝 **格式完整保留** - 保留 Markdown 标题、加粗、图片等所有格式
 - 🎨 **智能格式化** - 自动清理 Pandoc 转换残留，优化书籍排版
 - 🌐 **Web 管理界面** - React + FastAPI 构建的现代化 Web 界面
 - 📚 **术语表管理** - 可视化管理翻译术语，支持导入导出
+- 🌗 **双语对照导出** - 双语任务可导出 Markdown 与双栏 HTML
 
 ## 🚀 快速开始
 
@@ -50,16 +53,32 @@ GOOGLE_API_KEY=your_google_api_key
 
 ```bash
 # 翻译 Markdown 文件
-python translate.py input/your_book.md
+python translate.py data/input/your_book.md
 
 # 翻译 EPUB 文件
 python translate.py BookTrans/your_book.epub
 
 # 使用术语表翻译
-python translate.py input/book.md -g glossary.json
+python translate.py data/input/book.md -g data/glossaries/glossary.json
+
+# 双语对照输出
+python translate.py data/input/book.md --bilingual --skip-conversion
 ```
 
 翻译结果将保存在 `data/output/` 目录。
+
+### 运行测试
+
+```bash
+# 快速回归测试
+bash scripts/run_tests.sh
+
+# 包含前端构建检查
+bash scripts/run_tests.sh --with-frontend
+
+# 仅运行 Python 单元测试
+python3 -m unittest discover -s tests -v
+```
 
 ## 📖 详细文档
 
@@ -74,9 +93,9 @@ python translate.py input/book.md -g glossary.json
 
 ```bash
 # 完整翻译流程
-python translate.py input/Cyclonopedia.epub \
-  -g CPglossary.json \
-  -o output/Cyclonopedia_CN.md
+python translate.py BookTrans/Cyclonopedia.epub \
+  -g data/glossaries/CPglossary.json \
+  -o output_final/Cyclonopedia_CN.md
 ```
 
 输出示例：
@@ -147,17 +166,25 @@ translator/
 编辑 `config/config.yaml` 自定义配置：
 
 ```yaml
-# 翻译引擎
-translator:
-  model: "deepseek-ai/DeepSeek-V3"
-  temperature: 0.3
-  max_concurrent: 10      # 最大并发数
-  chunk_size: 2000        # 每块大小
-
 # API 配置
 api:
-  rate_limit: 200         # 每分钟请求数
-  timeout: 60             # 超时时间（秒）
+  model: "deepseek-ai/DeepSeek-V3"
+  translator:
+    temperature: 0.3
+
+concurrency:
+  max_concurrent_requests: 10
+  rate_limit_per_minute: 200
+
+text_splitting:
+  chunk_size: 2000
+  chunk_overlap: 200
+  context_window: 800
+
+quality:
+  enable_qa_check: true
+  max_fix_attempts: 1
+  untranslated_word_span: 12
 ```
 
 ## 📊 翻译流程
@@ -167,12 +194,14 @@ api:
    ↓
 文档转换 (Pandoc)
    ↓
-文本智能分块 (2000 字/块)
+章节感知分块 (2000 字/块)
    ↓
 异步并发翻译 (10 并发)
+   ├─ Chunk 元数据 / 稳定 ID
    ├─ 术语表应用
-   ├─ 质量检查
-   └─ 自动修复
+   ├─ 质量校验 / 选择性修复
+   ├─ 失败重试（指数退避）
+   └─ 顺序输出管理
    ↓
 智能格式化
    ├─ 代码块保护
@@ -200,8 +229,20 @@ api:
 使用术语表：
 
 ```bash
-python translate.py input.md -g my_glossary.json
+python translate.py data/input/input.md -g data/glossaries/my_glossary.json
 ```
+
+### Web 任务状态
+
+- `pending`: 任务已创建，等待后台启动
+- `processing`: 正在翻译
+- `completed`: 全部 chunk 成功
+- `partial_success`: 部分 chunk 失败，但结果文件已生成
+- `failed`: 全部 chunk 失败或任务级错误
+
+说明：
+- Markdown 结果在 `completed` 和 `partial_success` 状态下都可下载
+- 双栏 HTML 仅对双语任务开放
 
 ### 智能格式化
 
@@ -247,6 +288,27 @@ python translate.py input.md --skip-formatting
 3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
 4. 推送到分支 (`git push origin feature/AmazingFeature`)
 5. 开启 Pull Request
+
+## 🧪 测试
+
+当前仓库已覆盖以下基础回归：
+
+- 术语表创建、更新、导入接口
+- 任务 `bilingual` 持久化
+- 单语/双语导出约束
+- 部分失败任务状态判定
+
+运行命令：
+
+```bash
+bash scripts/run_tests.sh
+
+# 如需包含前端构建
+bash scripts/run_tests.sh --with-frontend
+
+# 或仅运行单元测试
+python3 -m unittest discover -s tests -v
+```
 
 ## 📝 许可证
 

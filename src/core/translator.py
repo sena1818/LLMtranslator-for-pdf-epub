@@ -11,23 +11,29 @@ from pathlib import Path
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from ..utils.config_loader import get_config
+from .chunk_planner import ChunkPlanner, TextChunk
 from .rate_limiter import RateLimiter
 from .output_manager import OutputManager
+from .validator import QualityReport, TranslationValidator
 
 
 class TranslationResult:
     """翻译结果"""
     def __init__(self, chunk_index: int, original: str, translation: str,
-                 success: bool, retry_count: int = 0, duration: float = 0.0):
+                 success: bool, retry_count: int = 0, duration: float = 0.0,
+                 chunk_id: str = "", quality_report: Optional[dict] = None,
+                 repaired: bool = False):
         self.chunk_index = chunk_index
         self.original = original
         self.translation = translation
         self.success = success
         self.retry_count = retry_count
         self.duration = duration
+        self.chunk_id = chunk_id
+        self.quality_report = quality_report or {}
+        self.repaired = repaired
 
 
 class TranslationEngine:
@@ -65,6 +71,18 @@ class TranslationEngine:
         )
 
         self.semaphore = asyncio.Semaphore(self.config.max_concurrent)
+        self.chunk_planner = ChunkPlanner(
+            chunk_size=self.config.chunk_size,
+            context_window=self.config.context_window,
+        )
+        self.validator = TranslationValidator(
+            untranslated_word_span=self.config.untranslated_word_span,
+            max_glossary_checks=self.config.max_glossary_checks,
+        )
+
+    def plan_chunks(self, text: str) -> List[TextChunk]:
+        """结构化切块"""
+        return self.chunk_planner.plan(text)
 
     def split_text(self, text: str) -> List[str]:
         """
@@ -76,13 +94,7 @@ class TranslationEngine:
         Returns:
             分块后的文本列表
         """
-        splitter = RecursiveCharacterTextSplitter(
-            chunk_size=self.config.chunk_size,
-            chunk_overlap=0,
-            separators=self.config.get("text_splitting.separators",
-                                       ["\n\n", "\n", ".", "!", "?", " ", ""])
-        )
-        return splitter.split_text(text)
+        return [chunk.text for chunk in self.plan_chunks(text)]
 
     def clean_output(self, text: str) -> str:
         """
@@ -181,18 +193,14 @@ class TranslationEngine:
 
     async def translate_chunk(
         self,
-        chunk_index: int,
-        text: str,
-        context: str = "",
+        chunk: TextChunk,
         progress_callback: Optional[Callable] = None
     ) -> TranslationResult:
         """
         翻译单个文本块
 
         Args:
-            chunk_index: 块索引
-            text: 待翻译文本
-            context: 上文语境
+            chunk: 结构化文本块
             progress_callback: 进度回调函数
 
         Returns:
@@ -200,7 +208,7 @@ class TranslationEngine:
         """
         await self.rate_limiter.acquire()
 
-        prompt = self.build_prompt(text, context)
+        prompt = self.build_prompt(chunk.text, chunk.context_text)
         chain = prompt | self.llm_translator | StrOutputParser()
 
         # 重试逻辑
@@ -212,31 +220,41 @@ class TranslationEngine:
 
                 translation = await chain.ainvoke({
                     "glossary": "\n".join([f"- {en}: {zh}" for en, zh in self.glossary.items()]),
-                    "context": context[-800:] if context else "",
-                    "text": text
+                    "context": chunk.context_text,
+                    "text": chunk.text
                 })
 
                 # 清理输出
                 translation = self.clean_output(translation)
+                translation, quality_report, repaired = await self._run_quality_pipeline(
+                    chunk=chunk,
+                    translation=translation,
+                )
 
                 duration = time.time() - start_time
 
                 # 成功回调
                 if progress_callback:
                     await progress_callback({
-                        "chunk_index": chunk_index,
+                        "chunk_index": chunk.index,
+                        "chunk_id": chunk.chunk_id,
                         "status": "completed",
                         "translation": translation,
-                        "duration": duration
+                        "duration": duration,
+                        "quality_report": quality_report.to_dict(),
+                        "repaired": repaired,
                     })
 
                 return TranslationResult(
-                    chunk_index=chunk_index,
-                    original=text,
+                    chunk_index=chunk.index,
+                    original=chunk.text,
                     translation=translation,
                     success=True,
                     retry_count=retry,
-                    duration=duration
+                    duration=duration,
+                    chunk_id=chunk.chunk_id,
+                    quality_report=quality_report.to_dict(),
+                    repaired=repaired,
                 )
 
             except Exception as e:
@@ -247,25 +265,111 @@ class TranslationEngine:
                     # 失败回调
                     if progress_callback:
                         await progress_callback({
-                            "chunk_index": chunk_index,
+                            "chunk_index": chunk.index,
+                            "chunk_id": chunk.chunk_id,
                             "status": "failed",
                             "error": str(e)
                         })
 
                     return TranslationResult(
-                        chunk_index=chunk_index,
-                        original=text,
+                        chunk_index=chunk.index,
+                        original=chunk.text,
                         translation=f"[翻译失败: {str(e)}]",
                         success=False,
-                        retry_count=retry
+                        retry_count=retry,
+                        chunk_id=chunk.chunk_id,
+                        quality_report={"passed": False, "issue_count": 1, "issues": []},
                     )
+
+    async def _run_quality_pipeline(
+        self,
+        chunk: TextChunk,
+        translation: str,
+    ) -> tuple[str, QualityReport, bool]:
+        """质量检查与选择性修复"""
+        if not self.config.enable_qa_check:
+            return translation, QualityReport(passed=True), False
+
+        baseline = self.validator.validate(chunk.text, translation, self.glossary)
+        if baseline.passed or not self.validator.should_repair(baseline):
+            return translation, baseline, False
+
+        best_translation = translation
+        best_report = baseline
+        repaired = False
+
+        for _ in range(self.config.max_fix_attempts):
+            candidate_translation = await self._repair_translation(
+                chunk=chunk,
+                translation=best_translation,
+                report=best_report,
+            )
+            candidate_translation = self.clean_output(candidate_translation)
+            candidate_report = self.validator.validate(chunk.text, candidate_translation, self.glossary)
+
+            if self.validator.is_better(candidate_report, best_report):
+                best_translation = candidate_translation
+                best_report = candidate_report
+                repaired = True
+
+            if best_report.passed:
+                break
+
+        return best_translation, best_report, repaired
+
+    async def _repair_translation(
+        self,
+        chunk: TextChunk,
+        translation: str,
+        report: QualityReport,
+    ) -> str:
+        """对高风险 chunk 触发一次修复"""
+        await self.rate_limiter.acquire()
+
+        issues_text = "\n".join(f"- {issue.message}" for issue in report.issues)
+        prompt_template = """你是学术翻译审校者。请在不改变原意和 Markdown 结构的前提下修正译文。
+
+【章节】:
+{section_title}
+
+【原文】:
+{original}
+
+【当前译文】:
+{translation}
+
+【发现的问题】:
+{issues}
+
+【术语表】(必须严格遵守):
+{glossary}
+
+---
+要求：
+1. 只修正问题相关部分
+2. 保留标题、链接、图片、代码块、引用块
+3. 不要添加说明或注释
+4. 直接输出修正后的完整译文
+"""
+
+        prompt = ChatPromptTemplate.from_template(prompt_template)
+        chain = prompt | self.llm_checker | StrOutputParser()
+
+        return await chain.ainvoke({
+            "section_title": " > ".join(chunk.section_path) if chunk.section_path else chunk.section_title,
+            "original": chunk.text,
+            "translation": translation,
+            "issues": issues_text,
+            "glossary": "\n".join([f"- {en}: {zh}" for en, zh in self.glossary.items()]),
+        })
 
     async def translate_batch(
         self,
         text: str,
         output_path: Path,
         progress_callback: Optional[Callable] = None,
-        bilingual: bool = False
+        bilingual: bool = False,
+        prepared_chunks: Optional[List[TextChunk]] = None,
     ) -> List[TranslationResult]:
         """
         批量翻译完整文本
@@ -280,7 +384,7 @@ class TranslationEngine:
             翻译结果列表
         """
         # 1. 文本分块
-        chunks = self.split_text(text)
+        chunks = prepared_chunks or self.plan_chunks(text)
         total = len(chunks)
 
         if progress_callback:
@@ -294,11 +398,10 @@ class TranslationEngine:
 
         # 3. 准备任务列表
         tasks = []
-        for i, chunk in enumerate(chunks):
-            context = chunks[i-1][-500:] if i > 0 else ""
+        for chunk in chunks:
             tasks.append(
                 self._process_one_chunk(
-                    i, chunk, context, output_manager, progress_callback
+                    chunk, output_manager, progress_callback
                 )
             )
 
@@ -309,15 +412,13 @@ class TranslationEngine:
 
     async def _process_one_chunk(
         self,
-        index: int,
-        chunk: str,
-        context: str,
+        chunk: TextChunk,
         output_manager: OutputManager,
         callback: Optional[Callable]
     ) -> TranslationResult:
         """单块处理(信号量控制)"""
         async with self.semaphore:
-            result = await self.translate_chunk(index, chunk, context, callback)
+            result = await self.translate_chunk(chunk, callback)
 
             # 写入输出管理器
             await output_manager.add_result(
