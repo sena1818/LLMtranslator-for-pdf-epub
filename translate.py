@@ -192,7 +192,8 @@ class TranslationPipeline:
                     f"✅ Chunk {event['chunk_index']} 完成 "
                     f"({completed}/{len(chunks)}, "
                     f"{completed/len(chunks)*100:.1f}%, "
-                    f"速度: {speed:.1f} chunks/分钟)"
+                    f"速度: {speed:.1f} chunks/分钟"
+                    f"{', 缓存命中' if event.get('cached') else ''})"
                 )
 
             elif event.get("status") == "failed":
@@ -231,6 +232,7 @@ class TranslationPipeline:
         logger.info(f"✅ 成功: {completed} 个")
         logger.info(f"❌ 失败: {failed} 个")
         logger.info(f"🔧 自动修复: {sum(1 for result in results if getattr(result, 'repaired', False))} 个")
+        logger.info(f"♻️ 缓存命中: {sum(1 for result in results if getattr(result, 'cached', False))} 个")
         logger.info(f"💾 输出文件: {output_file}")
         logger.info("="*60)
 
