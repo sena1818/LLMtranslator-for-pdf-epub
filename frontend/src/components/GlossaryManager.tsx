@@ -1,28 +1,5 @@
-/**
- * 术语表管理组件
- */
 import React, { useState } from 'react';
-import {
-  Card,
-  Table,
-  Button,
-  Space,
-  Modal,
-  Form,
-  Input,
-  Upload,
-  message,
-  Popconfirm,
-  Typography,
-  Tag,
-} from 'antd';
-import {
-  PlusOutlined,
-  DeleteOutlined,
-  DownloadOutlined,
-  UploadOutlined,
-  EditOutlined,
-} from '@ant-design/icons';
+import { Modal, Form, Input, Upload, App } from 'antd';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   getGlossaryList,
@@ -35,376 +12,330 @@ import {
   type Glossary,
 } from '../services/api';
 
-const { Title } = Typography;
-
 const GlossaryManager: React.FC = () => {
+  const { message, modal } = App.useApp();
   const queryClient = useQueryClient();
-  const [selectedGlossary, setSelectedGlossary] = useState<string | null>(null);
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [, setIsEditModalOpen] = useState(false);
-  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isImportOpen, setIsImportOpen] = useState(false);
+  const [sourceInput, setSourceInput] = useState('');
+  const [targetInput, setTargetInput] = useState('');
   const [createForm] = Form.useForm();
-  const [editForm] = Form.useForm();
   const [importForm] = Form.useForm();
 
-  // 获取术语表列表
+  // ── Queries ──
   const { data: glossaries = [], isLoading } = useQuery<Glossary[]>({
     queryKey: ['glossaries'],
     queryFn: getGlossaryList,
   });
 
-  // 获取选中术语表的详情
-  const { data: selectedGlossaryData } = useQuery<Glossary>({
-    queryKey: ['glossary', selectedGlossary],
-    queryFn: () => getGlossary(selectedGlossary!),
-    enabled: !!selectedGlossary,
+  const { data: selectedData } = useQuery<Glossary>({
+    queryKey: ['glossary', selectedId],
+    queryFn: () => getGlossary(selectedId!),
+    enabled: !!selectedId,
   });
 
-  // 创建术语表
+  // ── Mutations ──
   const createMutation = useMutation({
     mutationFn: ({ name, terms }: { name: string; terms: Record<string, string> }) =>
       createGlossary(name, terms),
     onSuccess: () => {
       message.success('术语表创建成功');
       queryClient.invalidateQueries({ queryKey: ['glossaries'] });
-      setIsCreateModalOpen(false);
+      setIsCreateOpen(false);
       createForm.resetFields();
     },
-    onError: (error: any) => {
-      message.error(`创建失败: ${error.message}`);
-    },
+    onError: (err: Error) => message.error(`创建失败: ${err.message}`),
   });
 
-  // 修改术语
   const modifyMutation = useMutation({
-    mutationFn: ({
-      glossaryId,
-      add,
-      remove,
-    }: {
-      glossaryId: string;
-      add?: Record<string, string>;
-      remove?: string[];
-    }) => modifyGlossaryTerms(glossaryId, add, remove),
+    mutationFn: ({ glossaryId, add, remove }: { glossaryId: string; add?: Record<string, string>; remove?: string[] }) =>
+      modifyGlossaryTerms(glossaryId, add, remove),
     onSuccess: () => {
       message.success('术语已更新');
-      queryClient.invalidateQueries({ queryKey: ['glossary', selectedGlossary] });
+      queryClient.invalidateQueries({ queryKey: ['glossary', selectedId] });
       queryClient.invalidateQueries({ queryKey: ['glossaries'] });
-      setIsEditModalOpen(false);
-      editForm.resetFields();
     },
-    onError: (error: any) => {
-      message.error(`更新失败: ${error.message}`);
-    },
+    onError: (err: Error) => message.error(`更新失败: ${err.message}`),
   });
 
-  // 删除术语表
   const deleteMutation = useMutation({
     mutationFn: deleteGlossary,
     onSuccess: () => {
       message.success('术语表已删除');
       queryClient.invalidateQueries({ queryKey: ['glossaries'] });
-      if (selectedGlossary) {
-        setSelectedGlossary(null);
-      }
+      setSelectedId(null);
     },
-    onError: (error: any) => {
-      message.error(`删除失败: ${error.message}`);
-    },
+    onError: (err: Error) => message.error(`删除失败: ${err.message}`),
   });
 
-  // 导入术语表
   const importMutation = useMutation({
     mutationFn: ({ file, name }: { file: File; name: string }) => importGlossary(file, name),
     onSuccess: () => {
       message.success('术语表导入成功');
       queryClient.invalidateQueries({ queryKey: ['glossaries'] });
-      setIsImportModalOpen(false);
+      setIsImportOpen(false);
       importForm.resetFields();
     },
-    onError: (error: any) => {
-      message.error(`导入失败: ${error.message}`);
-    },
+    onError: (err: Error) => message.error(`导入失败: ${err.message}`),
   });
 
-  // 处理创建术语表
+  // ── Handlers ──
   const handleCreate = () => {
-    createForm.validateFields().then((values) => {
+    createForm.validateFields().then(values => {
       try {
         const terms = JSON.parse(values.terms);
         createMutation.mutate({ name: values.name, terms });
-      } catch (e) {
+      } catch {
         message.error('术语 JSON 格式错误');
       }
     });
   };
 
-  // 处理添加术语
   const handleAddTerm = () => {
-    editForm.validateFields().then((values) => {
-      if (!selectedGlossary) return;
-      modifyMutation.mutate({
-        glossaryId: selectedGlossary,
-        add: { [values.source]: values.target },
-      });
-    });
-  };
-
-  // 处理删除术语
-  const handleRemoveTerm = (source: string) => {
-    if (!selectedGlossary) return;
+    if (!selectedId || !sourceInput.trim() || !targetInput.trim()) {
+      message.warning('请填写原文和译文');
+      return;
+    }
     modifyMutation.mutate({
-      glossaryId: selectedGlossary,
-      remove: [source],
+      glossaryId: selectedId,
+      add: { [sourceInput.trim()]: targetInput.trim() },
+    });
+    setSourceInput('');
+    setTargetInput('');
+  };
+
+  const handleRemoveTerm = (source: string) => {
+    if (!selectedId) return;
+    modal.confirm({
+      title: '删除术语',
+      content: `确定删除术语 "${source}"？`,
+      okText: '确定',
+      cancelText: '取消',
+      okButtonProps: { danger: true },
+      onOk: () => modifyMutation.mutate({ glossaryId: selectedId, remove: [source] }),
     });
   };
 
-  // 处理导入
+  const handleDeleteGlossary = (id: string, name: string) => {
+    modal.confirm({
+      title: '删除术语表',
+      content: `确定删除术语表 "${name}"？此操作不可恢复。`,
+      okText: '确定删除',
+      cancelText: '取消',
+      okButtonProps: { danger: true },
+      onOk: () => deleteMutation.mutate(id),
+    });
+  };
+
   const handleImport = () => {
-    importForm.validateFields().then((values) => {
-      if (!values.file || values.file.length === 0) {
-        message.error('请选择文件');
-        return;
-      }
+    importForm.validateFields().then(values => {
+      if (!values.file?.length) { message.error('请选择文件'); return; }
       const file = values.file[0].originFileObj as File;
       importMutation.mutate({ file, name: values.name });
     });
   };
 
-  // 术语表列表表格列配置
-  const glossaryColumns = [
-    {
-      title: '名称',
-      dataIndex: 'name',
-      key: 'name',
-    },
-    {
-      title: '术语数量',
-      dataIndex: 'term_count',
-      key: 'term_count',
-      render: (count: number) => <Tag color="blue">{count} 个术语</Tag>,
-    },
-    {
-      title: '更新时间',
-      dataIndex: 'updated_at',
-      key: 'updated_at',
-      render: (time: string) => new Date(time).toLocaleString('zh-CN'),
-    },
-    {
-      title: '操作',
-      key: 'actions',
-      render: (_: any, record: Glossary) => (
-        <Space>
-          <Button
-            size="small"
-            icon={<EditOutlined />}
-            onClick={() => setSelectedGlossary(record.id)}
-          >
-            编辑
-          </Button>
-          <Button
-            size="small"
-            icon={<DownloadOutlined />}
-            onClick={() => window.open(exportGlossary(record.id), '_blank')}
-          >
-            导出
-          </Button>
-          <Popconfirm
-            title="确定删除此术语表?"
-            onConfirm={() => deleteMutation.mutate(record.id)}
-            okText="确定"
-            cancelText="取消"
-          >
-            <Button size="small" danger icon={<DeleteOutlined />}>
-              删除
-            </Button>
-          </Popconfirm>
-        </Space>
-      ),
-    },
-  ];
-
-  // 术语详情表格列配置
-  const termColumns = [
-    {
-      title: '原文 (English)',
-      dataIndex: 'source',
-      key: 'source',
-      width: '45%',
-    },
-    {
-      title: '译文 (中文)',
-      dataIndex: 'target',
-      key: 'target',
-      width: '45%',
-    },
-    {
-      title: '操作',
-      key: 'actions',
-      width: '10%',
-      render: (_: any, record: { source: string; target: string }) => (
-        <Popconfirm
-          title="确定删除此术语?"
-          onConfirm={() => handleRemoveTerm(record.source)}
-          okText="确定"
-          cancelText="取消"
-        >
-          <Button size="small" danger icon={<DeleteOutlined />} />
-        </Popconfirm>
-      ),
-    },
-  ];
-
-  // 转换术语数据为表格格式
-  const termData = selectedGlossaryData?.terms
-    ? Object.entries(selectedGlossaryData.terms).map(([source, target]) => ({
-        source,
-        target,
-        key: source,
-      }))
+  // ── Terms data ──
+  const termEntries = selectedData?.terms
+    ? Object.entries(selectedData.terms)
     : [];
 
+  const formatDate = (str?: string) =>
+    str ? new Date(str).toLocaleDateString('zh-CN') : '—';
+
   return (
-    <div style={{ padding: '24px' }}>
-      <Space direction="vertical" size="large" style={{ width: '100%' }}>
-        <Title level={2}>术语表管理</Title>
+    <div className="page">
 
-        {/* 术语表列表 */}
-        <Card
-          title="术语表列表"
-          extra={
-            <Space>
-              <Button
-                type="primary"
-                icon={<PlusOutlined />}
-                onClick={() => setIsCreateModalOpen(true)}
+      {/* ── Hero ── */}
+      <div className="hero" style={{ marginBottom: 40 }}>
+        <div className="hero-text">
+          <h1>术语表<em>管理</em></h1>
+          <p>统一管理翻译术语，确保专业词汇在全文中保持一致的译名。</p>
+        </div>
+        <div style={{ display: 'flex', gap: 10, alignSelf: 'flex-end' }}>
+          <button className="btn-outline" onClick={() => setIsImportOpen(true)}>
+            导入 JSON
+          </button>
+          <button className="btn-accent" onClick={() => setIsCreateOpen(true)}>
+            + 新建术语表
+          </button>
+        </div>
+      </div>
+
+      <div className="rule" />
+
+      {/* ── Main Layout ── */}
+      <div className="glossary-layout">
+
+        {/* Sidebar */}
+        <div className="glossary-sidebar">
+          <div className="glossary-sidebar-header">
+            <span className="glossary-sidebar-title">术语表</span>
+            <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--text-3)', fontWeight: 300 }}>
+              共 {glossaries.length} 个
+            </span>
+          </div>
+
+          {isLoading ? (
+            <div className="glossary-empty">加载中…</div>
+          ) : glossaries.length === 0 ? (
+            <div className="glossary-empty">暂无术语表</div>
+          ) : (
+            glossaries.map(g => (
+              <div
+                key={g.id}
+                className={`glossary-item ${selectedId === g.id ? 'active' : ''}`}
+                onClick={() => setSelectedId(g.id)}
               >
-                新建术语表
-              </Button>
-              <Button icon={<UploadOutlined />} onClick={() => setIsImportModalOpen(true)}>
-                导入 JSON
-              </Button>
-            </Space>
-          }
-        >
-          <Table
-            columns={glossaryColumns}
-            dataSource={glossaries}
-            loading={isLoading}
-            rowKey="id"
-            pagination={false}
-          />
-        </Card>
+                <div className="glossary-item-name">{g.name}</div>
+                <div className="glossary-item-meta">{g.term_count ?? 0} 个术语 · {formatDate(g.updated_at)}</div>
+              </div>
+            ))
+          )}
+        </div>
 
-        {/* 术语详情 */}
-        {selectedGlossary && selectedGlossaryData && (
-          <Card
-            title={`术语详情: ${selectedGlossaryData.name}`}
-            extra={
-              <Button onClick={() => setSelectedGlossary(null)}>关闭</Button>
-            }
-          >
-            <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-              <Form form={editForm} layout="inline" onFinish={handleAddTerm}>
-                <Form.Item
-                  name="source"
-                  rules={[{ required: true, message: '请输入原文' }]}
-                  style={{ flex: 1 }}
-                >
-                  <Input placeholder="原文 (English)" />
-                </Form.Item>
-                <Form.Item
-                  name="target"
-                  rules={[{ required: true, message: '请输入译文' }]}
-                  style={{ flex: 1 }}
-                >
-                  <Input placeholder="译文 (中文)" />
-                </Form.Item>
-                <Form.Item>
-                  <Button
-                    type="primary"
-                    htmlType="submit"
-                    icon={<PlusOutlined />}
-                    loading={modifyMutation.isPending}
+        {/* Detail Panel */}
+        <div className="glossary-detail">
+          {!selectedId ? (
+            <div className="glossary-empty">← 从左侧选择一个术语表查看详情</div>
+          ) : !selectedData ? (
+            <div className="glossary-empty">加载中…</div>
+          ) : (
+            <>
+              <div className="glossary-detail-header">
+                <span className="glossary-detail-title">{selectedData.name}</span>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    className="btn-outline"
+                    onClick={() => window.open(exportGlossary(selectedId), '_blank')}
                   >
-                    添加术语
-                  </Button>
-                </Form.Item>
-              </Form>
+                    导出 JSON
+                  </button>
+                  <button
+                    className="btn-outline"
+                    style={{ color: 'var(--red)', borderColor: 'rgba(139,32,32,0.3)' }}
+                    onClick={() => handleDeleteGlossary(selectedId, selectedData.name)}
+                  >
+                    删除
+                  </button>
+                </div>
+              </div>
 
-              <Table
-                columns={termColumns}
-                dataSource={termData}
-                pagination={{ pageSize: 10 }}
-                size="small"
-              />
-            </Space>
-          </Card>
-        )}
-      </Space>
+              {/* Add Term Row */}
+              <div className="add-term-form">
+                <input
+                  className="term-input"
+                  placeholder="原文 (English)"
+                  value={sourceInput}
+                  onChange={e => setSourceInput(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleAddTerm()}
+                />
+                <input
+                  className="term-input"
+                  placeholder="译文 (中文)"
+                  value={targetInput}
+                  onChange={e => setTargetInput(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleAddTerm()}
+                />
+                <button
+                  className="btn-accent"
+                  onClick={handleAddTerm}
+                  disabled={modifyMutation.isPending}
+                >
+                  添加
+                </button>
+              </div>
 
-      {/* 创建术语表弹窗 */}
+              {/* Terms Table */}
+              {termEntries.length === 0 ? (
+                <div className="glossary-empty">暂无术语，从上方添加</div>
+              ) : (
+                <table className="terms-table">
+                  <thead>
+                    <tr>
+                      <th>原文 (English)</th>
+                      <th>译文 (中文)</th>
+                      <th style={{ width: 60 }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {termEntries.map(([source, target]) => (
+                      <tr key={source}>
+                        <td className="term-en">{source}</td>
+                        <td className="term-zh">{target}</td>
+                        <td>
+                          <button
+                            className="btn-del"
+                            onClick={() => handleRemoveTerm(source)}
+                            style={{ fontSize: 12, padding: '4px 8px' }}
+                          >
+                            删除
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* ── Create Modal ── */}
       <Modal
         title="新建术语表"
-        open={isCreateModalOpen}
+        open={isCreateOpen}
         onOk={handleCreate}
-        onCancel={() => setIsCreateModalOpen(false)}
+        onCancel={() => { setIsCreateOpen(false); createForm.resetFields(); }}
         confirmLoading={createMutation.isPending}
+        okText="创建"
+        cancelText="取消"
       >
-        <Form form={createForm} layout="vertical">
-          <Form.Item
-            name="name"
-            label="术语表名称"
-            rules={[{ required: true, message: '请输入术语表名称' }]}
-          >
-            <Input placeholder="例如: 哲学术语" />
+        <Form form={createForm} layout="vertical" style={{ marginTop: 16 }}>
+          <Form.Item name="name" label="术语表名称" rules={[{ required: true, message: '请输入名称' }]}>
+            <Input placeholder="例如：Cyclonopedia 术语表" />
           </Form.Item>
-          <Form.Item
-            name="terms"
-            label="术语 (JSON 格式)"
-            rules={[{ required: true, message: '请输入术语' }]}
-          >
+          <Form.Item name="terms" label="术语 (JSON 格式)" rules={[{ required: true, message: '请输入术语' }]}>
             <Input.TextArea
-              rows={6}
-              placeholder='{"English Term": "中文译名", "Example": "示例"}'
+              rows={7}
+              placeholder={'{\n  "Hyperstition": "超虚构 (Hyperstition)",\n  "War Machine": "战争机器 (War Machine)"\n}'}
+              style={{ fontFamily: 'DM Mono, monospace', fontSize: 13 }}
             />
           </Form.Item>
         </Form>
       </Modal>
 
-      {/* 导入术语表弹窗 */}
+      {/* ── Import Modal ── */}
       <Modal
         title="导入术语表"
-        open={isImportModalOpen}
+        open={isImportOpen}
         onOk={handleImport}
-        onCancel={() => setIsImportModalOpen(false)}
+        onCancel={() => { setIsImportOpen(false); importForm.resetFields(); }}
         confirmLoading={importMutation.isPending}
+        okText="导入"
+        cancelText="取消"
       >
-        <Form form={importForm} layout="vertical">
-          <Form.Item
-            name="name"
-            label="术语表名称"
-            rules={[{ required: true, message: '请输入术语表名称' }]}
-          >
-            <Input placeholder="例如: 导入的术语表" />
+        <Form form={importForm} layout="vertical" style={{ marginTop: 16 }}>
+          <Form.Item name="name" label="术语表名称" rules={[{ required: true, message: '请输入名称' }]}>
+            <Input placeholder="例如：导入的术语表" />
           </Form.Item>
           <Form.Item
             name="file"
             label="选择 JSON 文件"
             valuePropName="fileList"
-            getValueFromEvent={(e) => (Array.isArray(e) ? e : e?.fileList)}
+            getValueFromEvent={e => Array.isArray(e) ? e : e?.fileList}
             rules={[{ required: true, message: '请选择文件' }]}
           >
-            <Upload
-              beforeUpload={() => false}
-              maxCount={1}
-              accept=".json"
-            >
-              <Button icon={<UploadOutlined />}>选择文件</Button>
+            <Upload beforeUpload={() => false} maxCount={1} accept=".json">
+              <button className="btn-outline" type="button">选择文件</button>
             </Upload>
           </Form.Item>
         </Form>
       </Modal>
+
     </div>
   );
 };
