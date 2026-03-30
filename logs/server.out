@@ -1,0 +1,26 @@
+INFO:     Started server process [7577]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+🚀 启动 Web 翻译系统...
+📖 API 文档将在: http://localhost:8000/docs
+🌐 Web 界面将在: http://localhost:8000 (前端构建后)
+⏸️  当前已禁用内联 worker，请另开终端运行: python run_worker.py
+🧱 当前关闭热重载，更适合长时间翻译任务
+
+✅ 数据库初始化完成
+⏸️  内联 worker 已禁用，请单独运行 run_worker.py
+✅ FastAPI 服务器启动成功
+📖 API 文档: http://localhost:8000/docs
+INFO:     127.0.0.1:50567 - "GET /api/translation/tasks?skip=0&limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50567 - "GET / HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:50567 - "GET /assets/index-DJg6YWYf.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:50567 - "GET /api/glossary/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50569 - "GET /api/translation/tasks?skip=0&limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50569 - "GET /api/files/results/6b203692-6655-4f85-96d7-d9145e2e5c8b?format=html HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50569 - "GET /api/translation/tasks?skip=0&limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50577 - "GET /api/translation/tasks?skip=0&limit=20 HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [7577]

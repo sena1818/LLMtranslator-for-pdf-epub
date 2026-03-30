@@ -1,4 +1,5 @@
 common:
+  drop_empty_quote_lines: true
   heading_classes:
     calibre2: "##"
     calibre3: "###"
@@ -7,6 +8,20 @@ common:
   heading_max_length: 60
   unwrap_bracket_lines: true
   bracket_line_max_length: 80
+  recursive_inline_classes:
+    - "italic"
+    - "emphasis"
+    - "calibre"
+    - "calibre_"
+  strip_inline_classes:
+    - "calibre"
+    - "calibre_"
+    - "italic"
+    - "emphasis"
+    - "small"
+    - "bold"
+  strip_symbol_lines:
+    - "*"
 
 epub:
   strip_block_patterns:
