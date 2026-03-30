@@ -138,7 +138,11 @@ class TranslationService:
 
             # 6. 文本分块
             chunks = engine.plan_chunks(text)
+            task.progress.current = 0
             task.progress.total = len(chunks)
+            task.progress.percentage = 0.0
+            task.progress.speed = 0.0
+            task.progress.elapsed = 0.0
             await self.db.update_task(task)
             logger.info(f"✂️ 文本已分块: {len(chunks)} chunks")
 

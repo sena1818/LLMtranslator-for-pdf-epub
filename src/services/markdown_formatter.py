@@ -40,9 +40,9 @@ class SmartMarkdownFormatter:
             "book_formatting_enhanced": 0,
         }
 
-    def format(self, text: str) -> str:
+    def format(self, text: str, source_type: str = "epub") -> str:
         """执行结构化格式化"""
-        text = self.artifact_cleaner.clean(text)
+        text = self.artifact_cleaner.clean(text, source_type=source_type)
         nodes = self.parse_blocks(text)
         rendered = self.render_blocks(nodes)
         rendered = self.normalize_whitespace(rendered)

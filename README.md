@@ -12,6 +12,7 @@
 - 🆔 **稳定 Chunk ID** - 每个 chunk 自带结构化元数据，便于缓存、恢复和调试
 - 📚 **术语表约束** - 在 Prompt 中强制注入术语表，帮助保持术语一致
 - 🛡️ **质量校验与选择性修复** - 自动检测未翻译英文、术语遗漏和 Markdown 结构问题，只对高风险块触发修复
+- 🤝 **三角色多 Agent 协作** - 文档分析员先生成全局摘要和术语提示，主翻译员执行翻译，审校员只在高风险块介入
 - ⚠️ **失败块保底输出** - 单个 chunk 失败时写入占位符，不阻塞整体产出
 - 📝 **格式完整保留** - 保留 Markdown 标题、加粗、图片等所有格式
 - 🎨 **智能格式化** - 自动清理 Pandoc 转换残留，优化书籍排版
@@ -85,6 +86,7 @@ python3 -m unittest discover -s tests -v
 - [翻译系统使用指南](翻译系统使用指南.md) - 完整的使用说明
 - [格式化工具使用指南](格式化工具使用指南.md) - Markdown 格式化工具文档
 - [本地运行指南](本地运行指南.md) - Web 界面部署指南
+- [LangChain / LangGraph 学习地图](LangChain_LangGraph学习地图.md) - 面向本项目的学习路线
 - [CLAUDE.md](CLAUDE.md) - 项目架构和技术细节
 
 ## 🎯 功能演示
@@ -122,7 +124,10 @@ python translate.py BookTrans/Cyclonopedia.epub \
 启动 Web 服务器：
 
 ```bash
-# 启动后端
+# 推荐：长任务模式（后台启动 API + 独立 worker + macOS 防休眠）
+bash scripts/longrun.sh
+
+# 仅启动后端（默认会带一个内联 worker）
 python run_server.py
 
 # 启动前端（新终端）
@@ -131,6 +136,31 @@ npm run dev
 ```
 
 访问 http://localhost:5173/ 即可使用可视化界面。
+
+如果你希望把 API 和执行器拆开运行：
+
+```bash
+# 终端 1：只启动 API
+TRANSLATION_INLINE_WORKER=0 python run_server.py
+
+# 终端 2：启动独立 worker
+python run_worker.py
+
+# 或直接启动多进程 worker 集群
+python run_worker.py --processes 4 --parallel-tasks 2
+```
+
+长时间翻译任务更建议使用 `bash scripts/longrun.sh`。它会：
+- 后台启动 API
+- 后台启动独立 worker
+- 将 PID 写入 `logs/server.pid` 和 `logs/worker.pid`
+- 将日志写入 `logs/server.out` 和 `logs/worker.out`
+
+如果你确实需要防止 Mac 休眠，再显式启用：
+
+```bash
+TRANSLATION_PREVENT_SLEEP=1 bash scripts/longrun.sh
+```
 
 ## 🛠️ 核心架构
 
@@ -144,10 +174,15 @@ translator/
 │   │   └── output_manager.py # 顺序输出管理
 │   ├── converters/           # 文档转换器
 │   │   └── document_converter.py
+│   ├── services/             # 导出与格式化服务
+│   │   ├── export_service.py
+│   │   └── markdown_formatter.py
 │   └── api/                  # Web API
 │       ├── app.py            # FastAPI 应用
 │       ├── routes/           # API 路由
-│       └── services/         # 业务逻辑
+│       ├── services/         # 业务逻辑
+│       └── worker.py         # 队列 worker
+├── run_worker.py             # 独立 worker 启动脚本
 ├── scripts/                  # 辅助工具
 │   ├── smart_markdown_formatter.py  # 智能格式化
 │   ├── async_translator.py          # 独立翻译器
@@ -185,6 +220,18 @@ quality:
   enable_qa_check: true
   max_fix_attempts: 1
   untranslated_word_span: 12
+
+worker:
+  inline_enabled: true
+  poll_interval_seconds: 2
+  stale_after_seconds: 900
+  max_parallel_tasks: 1
+  processes: 1
+
+multi_agent:
+  enabled: true
+  analyst_max_chars: 12000
+  analyst_max_sections: 12
 ```
 
 ## 📊 翻译流程
@@ -197,16 +244,20 @@ quality:
 章节感知分块 (2000 字/块)
    ↓
 异步并发翻译 (10 并发)
+   ├─ 文档分析员（摘要 / 风格 / 术语提示）
    ├─ Chunk 元数据 / 稳定 ID
    ├─ 术语表应用
+   ├─ 主翻译员
    ├─ 质量校验 / 选择性修复
+   ├─ 审校修复员（仅高风险块）
+   ├─ Chunk 级缓存恢复
    ├─ 失败重试（指数退避）
    └─ 顺序输出管理
    ↓
 智能格式化
-   ├─ 代码块保护
-   ├─ 目录清理
-   ├─ 引用块转换
+   ├─ 块级结构解析
+   ├─ 代码块保留
+   ├─ Pandoc div / 目录 / 引用清理
    └─ 排版优化
    ↓
 输出 Markdown 文件
@@ -232,7 +283,13 @@ quality:
 python translate.py data/input/input.md -g data/glossaries/my_glossary.json
 ```
 
-### Web 任务状态
+### Web 任务状态与队列
+
+- API 负责创建任务并写入 SQLite 队列
+- worker 负责认领 `pending` 任务并执行翻译
+- 默认 `run_server.py` 会启一个内联 worker，单机开箱即用
+- 生产或长任务场景推荐单独运行 [run_worker.py](/Users/sena/Desktop/LLMAgent/translator/run_worker.py)
+- `python run_worker.py --processes N --parallel-tasks M` 可直接横向扩到多进程，多进程之间通过数据库原子认领避免重复消费
 
 - `pending`: 任务已创建，等待后台启动
 - `processing`: 正在翻译
@@ -254,6 +311,7 @@ python scripts/smart_markdown_formatter.py output/book_CN.md
 
 功能：
 - ✅ 保留代码块格式
+- ✅ 按块处理标题、列表、Pandoc div 和段落
 - ✅ 清理 Pandoc 残留标记
 - ✅ 转换引用块和强调格式
 - ✅ 修复图片路径

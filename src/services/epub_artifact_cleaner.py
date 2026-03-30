@@ -31,8 +31,12 @@ class EpubArtifactCleaner:
         text = self._merge_multiline_image_attributes(text)
         text = self._normalize_escaped_list_markers(text)
         text = self._remove_anchor_lines(text)
+        text = self._remove_empty_quote_lines(text)
         text = self._normalize_standalone_spans(text)
+        text = self._normalize_inline_spans(text)
+        text = self._strip_inline_class_suffixes(text)
         text = self._normalize_standalone_bracket_lines(text)
+        text = self._remove_symbol_only_lines(text)
         text = self._remove_orphan_class_lines(text)
         text = self._normalize_images(text)
         text = self._collapse_blank_lines(text)
@@ -111,6 +115,7 @@ class EpubArtifactCleaner:
         patterns = self.rules.get("strip_line_patterns") or []
         for pattern in patterns:
             text = re.sub(pattern, "", text)
+        text = re.sub(r"\[\]\{#[^}]+\}", "", text)
         text = re.sub(r"(?m)^(?:>\s*)?\[\]\{#[^}]+\}\s*$", "", text)
         return text
 
@@ -121,27 +126,22 @@ class EpubArtifactCleaner:
         cleaned_lines = []
         for line in text.splitlines():
             quote_prefix, stripped = self._split_quote_prefix(line)
-            match = re.match(r"^\[([^\]]*)\]\{\.([A-Za-z0-9_]+)\}$", stripped)
-            if not match:
-                malformed = re.match(r"^\[([^\]]*)\]\{\.([A-Za-z0-9_]+)\]$", stripped)
-                if malformed:
-                    content, class_name = malformed.groups()
-                    content = content.replace("\u00a0", " ").strip()
-                    if not content:
-                        continue
-                    if self._should_promote_to_heading(content, class_name):
-                        cleaned_lines.append(
-                            f"{quote_prefix}{self._heading_prefix(class_name)} {content}"
-                        )
-                    else:
-                        cleaned_lines.append(f"{quote_prefix}{content}")
-                    continue
+            if "{." not in stripped or "[" not in stripped:
                 cleaned_lines.append(line)
                 continue
-
-            content, class_name = match.groups()
-            content = content.replace("\u00a0", " ").strip()
+            unwrapped = self._unwrap_line_class_wrapper(stripped)
+            if not unwrapped:
+                malformed = re.match(r"^\[(.+)\]\{\.([A-Za-z0-9_]+)\]$", stripped)
+                if not malformed:
+                    cleaned_lines.append(line)
+                    continue
+                content, class_name = malformed.groups()
+            else:
+                content, class_name = unwrapped
+            content = self._unwrap_span_content(content).replace("\u00a0", " ").strip()
             if not content:
+                continue
+            if content in set(self.rules.get("strip_symbol_lines", [])):
                 continue
 
             if self._should_promote_to_heading(content, class_name):
@@ -151,6 +151,20 @@ class EpubArtifactCleaner:
             else:
                 cleaned_lines.append(f"{quote_prefix}{content}")
 
+        return "\n".join(cleaned_lines)
+
+    def _normalize_inline_spans(self, text: str) -> str:
+        cleaned_lines = []
+        for line in text.splitlines():
+            quote_prefix, stripped = self._split_quote_prefix(line)
+            if "{." not in stripped or "[" not in stripped:
+                cleaned_lines.append(line)
+                continue
+            normalized = self._unwrap_span_content(stripped)
+            if normalized != stripped:
+                cleaned_lines.append(f"{quote_prefix}{normalized}")
+            else:
+                cleaned_lines.append(line)
         return "\n".join(cleaned_lines)
 
     def _normalize_standalone_bracket_lines(self, text: str) -> str:
@@ -173,6 +187,44 @@ class EpubArtifactCleaner:
                 continue
             cleaned_lines.append(f"{quote_prefix}{content}")
         return "\n".join(cleaned_lines)
+
+    def _remove_symbol_only_lines(self, text: str) -> str:
+        symbols = set(self.rules.get("strip_symbol_lines", []))
+        if not symbols:
+            return text
+
+        cleaned_lines = []
+        for line in text.splitlines():
+            quote_prefix, stripped = self._split_quote_prefix(line)
+            if stripped in symbols:
+                continue
+            cleaned_lines.append(line if not quote_prefix else f"{quote_prefix}{stripped}")
+        return "\n".join(cleaned_lines)
+
+    def _remove_empty_quote_lines(self, text: str) -> str:
+        if not self.rules.get("drop_empty_quote_lines", False):
+            return text
+        cleaned_lines = []
+        for line in text.splitlines():
+            if re.match(r"^(?:\s*>\s*)+$", line):
+                continue
+            cleaned_lines.append(line)
+        return "\n".join(cleaned_lines)
+
+    def _strip_inline_class_suffixes(self, text: str) -> str:
+        prefixes = tuple(self.rules.get("strip_inline_classes", []))
+        if not prefixes:
+            return text
+
+        pattern = re.compile(r"\]\{\.([A-Za-z0-9_]+)\}")
+
+        def replace(match: re.Match[str]) -> str:
+            class_name = match.group(1).lower()
+            if any(class_name.startswith(prefix.lower()) for prefix in prefixes if prefix):
+                return ""
+            return match.group(0)
+
+        return pattern.sub(replace, text)
 
     def _remove_orphan_class_lines(self, text: str) -> str:
         patterns = [
@@ -222,9 +274,92 @@ class EpubArtifactCleaner:
         }
         return mapping.get(class_name, "###")
 
+    def _unwrap_span_content(self, text: str) -> str:
+        result = []
+        index = 0
+        while index < len(text):
+            if text[index] != "[":
+                result.append(text[index])
+                index += 1
+                continue
+
+            close_index = self._find_matching_bracket(text, index)
+            if close_index == -1:
+                result.append(text[index])
+                index += 1
+                continue
+
+            class_name, class_end = self._parse_class_suffix(text, close_index + 1)
+            if not class_name:
+                result.append(text[index : close_index + 1])
+                index = close_index + 1
+                continue
+
+            inner = self._unwrap_span_content(text[index + 1 : close_index])
+            result.append(self._render_span_content(inner, class_name))
+            index = class_end
+
+        current = "".join(result).replace("\u00a0", " ")
+        current = re.sub(r" {2,}", " ", current)
+        return current
+
+    def _replace_inline_span(self, match: re.Match[str]) -> str:
+        content, class_name = match.groups()
+        return self._render_span_content(content, class_name)
+
+    def _replace_double_wrapped_span(self, match: re.Match[str]) -> str:
+        content, inner_class, outer_class = match.groups()
+        rendered = self._render_span_content(content, inner_class)
+        return self._render_span_content(rendered, outer_class)
+
+    def _render_span_content(self, content: str, class_name: str) -> str:
+        lowered = class_name.lower()
+        prefixes = tuple(self.rules.get("recursive_inline_classes", []))
+        if lowered == "italic":
+            return f"*{content}*"
+        if lowered == "emphasis":
+            return f"**{content}**"
+        if any(lowered.startswith(prefix.lower()) for prefix in prefixes if prefix):
+            return content
+        return content
+
     def _split_quote_prefix(self, line: str) -> tuple[str, str]:
         match = re.match(r"^(\s*>\s*)?(.*)$", line)
         if not match:
             return "", line.strip()
         prefix, body = match.groups()
         return prefix or "", body.strip()
+
+    def _unwrap_line_class_wrapper(self, text: str) -> tuple[str, str] | None:
+        if not text.startswith("["):
+            return None
+        close_index = self._find_matching_bracket(text, 0)
+        if close_index == -1:
+            return None
+        class_name, class_end = self._parse_class_suffix(text, close_index + 1)
+        if not class_name or class_end != len(text):
+            return None
+        return text[1:close_index], class_name
+
+    def _find_matching_bracket(self, text: str, start_index: int) -> int:
+        depth = 0
+        for index in range(start_index, len(text)):
+            char = text[index]
+            if char == "[":
+                depth += 1
+            elif char == "]":
+                depth -= 1
+                if depth == 0:
+                    return index
+        return -1
+
+    def _parse_class_suffix(self, text: str, start_index: int) -> tuple[str | None, int]:
+        if not text.startswith("{.", start_index):
+            return None, start_index
+        end_index = text.find("}", start_index)
+        if end_index == -1:
+            return None, start_index
+        class_name = text[start_index + 2 : end_index].strip()
+        if not class_name:
+            return None, start_index
+        return class_name, end_index + 1

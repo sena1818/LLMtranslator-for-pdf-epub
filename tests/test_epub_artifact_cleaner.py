@@ -84,3 +84,50 @@ class EpubArtifactCleanerTestCase(unittest.TestCase):
         self.assertNotIn("kindlepos", cleaned)
         self.assertNotIn("filepos", cleaned)
         self.assertIn("### Chapter One", cleaned)
+
+    def test_cleaner_unwraps_nested_calibre_spans(self):
+        cleaner = EpubArtifactCleaner()
+        content = r"""[[NICK]{.calibre_1}]{.calibre1}[ ]{.calibre_1}[[LAND]{.calibre_1}]{.calibre1}
+[[*]{.calibre_9}]{.calibre2}
+[[[Edited By]{.calibre_1}]{.italic}]{.calibre2}
+[[Fanged Noumena]{.calibre_1}]{.calibre3}
+"""
+
+        cleaned = cleaner.clean(content, source_type="epub")
+
+        self.assertIn("NICK LAND", cleaned)
+        self.assertNotIn("[[*]{.calibre_9}]{.calibre2}", cleaned)
+        self.assertNotIn("\n*\n", f"\n{cleaned}\n")
+        self.assertIn("## *Edited By*", cleaned)
+        self.assertIn("### Fanged Noumena", cleaned)
+
+    def test_cleaner_unwraps_long_calibre_line_with_nested_footnote(self):
+        cleaner = EpubArtifactCleaner()
+        content = (
+            "> [Following Deleuze,^[[3](#index_split_004.html_filepos114207)]{.small}^ "
+            "Land refuses the marginalizing of aesthetics.]{.calibre_1}\n"
+            "> > > >\n"
+        )
+
+        cleaned = cleaner.clean(content, source_type="epub")
+
+        self.assertIn(
+            "> Following Deleuze,^[3](#index_split_004.html_filepos114207)^ "
+            "Land refuses the marginalizing of aesthetics.",
+            cleaned,
+        )
+        self.assertNotIn("]{.calibre_1}", cleaned)
+        self.assertNotIn("> > > >", cleaned)
+
+    def test_cleaner_strips_inline_class_suffixes(self):
+        cleaner = EpubArtifactCleaner()
+        content = (
+            "第一部 分]{.calibre6}：]{.calibre6}狼群\n"
+            "这种批判的情动再物质化将追问重构为]{.calibre_1}*勘探*\n"
+        )
+
+        cleaned = cleaner.clean(content, source_type="epub")
+
+        self.assertIn("第一部 分：狼群", cleaned)
+        self.assertIn("这种批判的情动再物质化将追问重构为*勘探*", cleaned)
+        self.assertNotIn("]{.calibre6}", cleaned)

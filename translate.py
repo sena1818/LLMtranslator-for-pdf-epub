@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from src.core.translator import TranslationEngine
 from src.converters.document_converter import DocumentConverter
 from src.utils.config_loader import get_config
-from scripts.smart_markdown_formatter import SmartMarkdownFormatter
+from src.services.markdown_formatter import SmartMarkdownFormatter
 
 # 配置日志
 logging.basicConfig(

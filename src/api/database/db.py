@@ -4,7 +4,7 @@ SQLite 数据库管理
 import aiosqlite
 from pathlib import Path
 from typing import Optional, List, Tuple
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from ..models.task import TranslationTask, TaskStatus, TaskProgress
 
@@ -45,6 +45,13 @@ class Database:
                 await db.execute(
                     "ALTER TABLE tasks ADD COLUMN bilingual INTEGER DEFAULT 0"
                 )
+
+            await db.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_tasks_status_created_at
+                ON tasks(status, created_at)
+                """
+            )
 
             await db.commit()
 
@@ -159,6 +166,77 @@ class Database:
             )
             await db.commit()
             return cursor.rowcount > 0
+
+    async def claim_next_pending_task(self) -> Optional[TranslationTask]:
+        """原子认领下一个待处理任务"""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            await db.execute("BEGIN IMMEDIATE")
+
+            async with db.execute(
+                """
+                SELECT task_id
+                FROM tasks
+                WHERE status = ?
+                ORDER BY created_at ASC
+                LIMIT 1
+                """,
+                (TaskStatus.PENDING.value,),
+            ) as cursor:
+                row = await cursor.fetchone()
+
+            if not row:
+                await db.commit()
+                return None
+
+            now = datetime.now().isoformat()
+            update_cursor = await db.execute(
+                """
+                UPDATE tasks
+                SET status = ?, error = NULL, updated_at = ?
+                WHERE task_id = ? AND status = ?
+                """,
+                (
+                    TaskStatus.PROCESSING.value,
+                    now,
+                    row["task_id"],
+                    TaskStatus.PENDING.value,
+                ),
+            )
+
+            if update_cursor.rowcount == 0:
+                await db.commit()
+                return None
+
+            async with db.execute(
+                "SELECT * FROM tasks WHERE task_id = ?",
+                (row["task_id"],),
+            ) as cursor:
+                claimed_row = await cursor.fetchone()
+
+            await db.commit()
+            return self._row_to_task(claimed_row) if claimed_row else None
+
+    async def requeue_stale_processing_tasks(self, stale_after_seconds: int = 900) -> int:
+        """将长时间未更新的 processing 任务重新放回队列"""
+        stale_before = (datetime.now() - timedelta(seconds=stale_after_seconds)).isoformat()
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                """
+                UPDATE tasks
+                SET status = ?, error = ?, updated_at = ?
+                WHERE status = ? AND updated_at IS NOT NULL AND updated_at < ?
+                """,
+                (
+                    TaskStatus.PENDING.value,
+                    "任务因 worker 中断被重新排队",
+                    datetime.now().isoformat(),
+                    TaskStatus.PROCESSING.value,
+                    stale_before,
+                ),
+            )
+            await db.commit()
+            return cursor.rowcount
 
     def _row_to_task(self, row) -> TranslationTask:
         """数据库行转任务对象"""
