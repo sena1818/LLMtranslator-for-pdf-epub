@@ -1,37 +1,5 @@
-/**
- * 翻译页面组件 - 美化版
- */
-import React, { useState } from 'react';
-import {
-  Upload,
-  Select,
-  Button,
-  Progress,
-  Card,
-  Space,
-  Typography,
-  Alert,
-  message,
-  Table,
-  Tag,
-  Switch,
-  Tooltip,
-  Row,
-  Col,
-  Statistic,
-} from 'antd';
-import {
-  UploadOutlined,
-  DownloadOutlined,
-  DeleteOutlined,
-  ReloadOutlined,
-  FileTextOutlined,
-  TranslationOutlined,
-  CheckCircleOutlined,
-  ClockCircleOutlined,
-  ThunderboltOutlined,
-} from '@ant-design/icons';
-import type { UploadFile } from 'antd/es/upload/interface';
+import React, { useState, useCallback } from 'react';
+import { App } from 'antd';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   createTranslationTask,
@@ -44,555 +12,444 @@ import {
   type Glossary,
 } from '../services/api';
 
-const { Title, Text, Paragraph } = Typography;
-const { Option } = Select;
-const { Dragger } = Upload;
+const DownloadIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+    <polyline points="7 10 12 15 17 10"/>
+    <line x1="12" y1="15" x2="12" y2="3"/>
+  </svg>
+);
+
+const UploadIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1">
+    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+    <polyline points="17 8 12 3 7 8"/>
+    <line x1="12" y1="3" x2="12" y2="15"/>
+  </svg>
+);
+
+const formatTime = (isoStr: string) => {
+  const d = new Date(isoStr);
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const h = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  return `${m}-${day}  ${h}:${min}`;
+};
+
+const ACCEPTED = ['.md', '.pdf', '.epub'];
+
+const isValidFile = (file: File) =>
+  ACCEPTED.some(ext => file.name.toLowerCase().endsWith(ext));
 
 const TranslationPage: React.FC = () => {
+  const { message } = App.useApp();
   const queryClient = useQueryClient();
-  const [fileList, setFileList] = useState<UploadFile[]>([]);
-  const [selectedGlossary, setSelectedGlossary] = useState<string | undefined>(undefined);
-  const [bilingual, setBilingual] = useState<boolean>(false);
+
+  const [file, setFile] = useState<File | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [selectedGlossary, setSelectedGlossary] = useState<string>('');
+  const [bilingual, setBilingual] = useState(false);
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
 
-  // 获取术语表列表
+  // ── Queries ──
   const { data: glossaries = [] } = useQuery<Glossary[]>({
     queryKey: ['glossaries'],
     queryFn: getGlossaryList,
   });
 
-  // 获取任务列表
-  const {
-    data: taskListData,
-    isLoading: isLoadingTasks,
-    isRefetching: isRefetchingTasks,
-    refetch: refetchTasks
-  } = useQuery({
+  const { data: taskListData, isLoading: isLoadingTasks, refetch: refetchTasks, isFetching: isRefetching } = useQuery({
     queryKey: ['tasks'],
     queryFn: () => getTaskList(0, 20),
-    refetchInterval: 5000, // 增加轮询间隔，减少请求压力
+    refetchInterval: 5000,
   });
 
-  // 查询当前任务状态
   const { data: currentTask } = useQuery<TranslationTask>({
     queryKey: ['task', currentTaskId],
     queryFn: () => getTaskStatus(currentTaskId!),
     enabled: !!currentTaskId,
     refetchInterval: (query) => {
-      const task = query.state.data;
-      if (task && (task.status === 'completed' || task.status === 'partial_success' || task.status === 'failed')) {
-        return false;
-      }
+      const t = query.state.data;
+      if (t && ['completed', 'partial_success', 'failed'].includes(t.status)) return false;
       return 2000;
     },
   });
 
-  // 创建翻译任务
-  const createTaskMutation = useMutation({
-    mutationFn: ({ file, glossaryId, bilingual }: { file: File; glossaryId?: string; bilingual: boolean }) =>
-      createTranslationTask(file, glossaryId, bilingual),
+  // ── Mutations ──
+  const createMutation = useMutation({
+    mutationFn: ({ f, glossaryId, bi }: { f: File; glossaryId?: string; bi: boolean }) =>
+      createTranslationTask(f, glossaryId || undefined, bi),
     onSuccess: (task) => {
       message.success('翻译任务已创建');
       setCurrentTaskId(task.task_id);
       queryClient.invalidateQueries({ queryKey: ['tasks'] });
-      setFileList([]);
+      setFile(null);
     },
-    onError: (error: Error) => {
-      message.error(`创建任务失败: ${error.message}`);
-    },
+    onError: (err: Error) => message.error(`创建任务失败: ${err.message}`),
   });
 
-  // 删除任务
-  const deleteTaskMutation = useMutation({
+  const deleteMutation = useMutation({
     mutationFn: deleteTask,
     onSuccess: () => {
       message.success('任务已删除');
       queryClient.invalidateQueries({ queryKey: ['tasks'] });
     },
-    onError: (error: Error) => {
-      message.error(`删除失败: ${error.message}`);
-    },
+    onError: (err: Error) => message.error(`删除失败: ${err.message}`),
   });
 
-  // 文件上传配置
-  const uploadProps = {
-    fileList,
-    beforeUpload: (file: File) => {
-      const isValidType =
-        file.name.endsWith('.md') ||
-        file.name.endsWith('.pdf') ||
-        file.name.endsWith('.epub');
+  // ── Drag & Drop ──
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragging(true);
+  }, []);
 
-      if (!isValidType) {
-        message.error('只支持 Markdown (.md), PDF (.pdf), EPUB (.epub) 文件');
-        return false;
-      }
+  const handleDragLeave = useCallback(() => setDragging(false), []);
 
-      setFileList([file as unknown as UploadFile]);
-      return false;
-    },
-    onRemove: () => {
-      setFileList([]);
-    },
-    maxCount: 1,
-  };
-
-  // 开始翻译
-  const handleStartTranslation = () => {
-    if (fileList.length === 0) {
-      message.warning('请先上传文件');
-      return;
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragging(false);
+    const dropped = e.dataTransfer.files[0];
+    if (dropped && isValidFile(dropped)) {
+      setFile(dropped);
+    } else {
+      message.error('仅支持 .md、.pdf、.epub 格式');
     }
+  }, []);
 
-    const file = fileList[0] as unknown as File;
-    createTaskMutation.mutate({ file, glossaryId: selectedGlossary, bilingual });
+  const handleFileInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = e.target.files?.[0];
+    if (picked && isValidFile(picked)) {
+      setFile(picked);
+    } else if (picked) {
+      message.error('仅支持 .md、.pdf、.epub 格式');
+    }
+    e.target.value = '';
+  }, []);
+
+  const handleSubmit = () => {
+    if (!file) { message.warning('请先上传文件'); return; }
+    createMutation.mutate({ f: file, glossaryId: selectedGlossary || undefined, bi: bilingual });
   };
 
-  // 任务状态标签
-  const getStatusTag = (status: string) => {
-    const statusMap = {
-      pending: { color: 'default', text: '等待中', icon: <ClockCircleOutlined /> },
-      processing: { color: 'processing', text: '翻译中', icon: <ThunderboltOutlined spin /> },
-      completed: { color: 'success', text: '已完成', icon: <CheckCircleOutlined /> },
-      partial_success: { color: 'warning', text: '部分完成', icon: <CheckCircleOutlined /> },
-      failed: { color: 'error', text: '失败', icon: null },
-    };
-    const config = statusMap[status as keyof typeof statusMap] || statusMap.pending;
-    return <Tag color={config.color} icon={config.icon}>{config.text}</Tag>;
+  // ── Derived ──
+  const tasks = taskListData?.tasks ?? [];
+  const totalTasks = taskListData?.total ?? 0;
+  const completedCount = tasks.filter(t => t.status === 'completed' || t.status === 'partial_success').length;
+  const processingCount = tasks.filter(t => t.status === 'processing').length;
+
+  const activeTask = currentTask && currentTask.status === 'processing' ? currentTask : null;
+  const doneTask = currentTask && (currentTask.status === 'completed' || currentTask.status === 'partial_success') ? currentTask : null;
+  const failedTask = currentTask && currentTask.status === 'failed' ? currentTask : null;
+
+  const getChipClass = (status: string) => {
+    if (status === 'processing') return 'chip chip-running';
+    if (status === 'completed')  return 'chip chip-done';
+    if (status === 'partial_success') return 'chip chip-warn';
+    if (status === 'failed')     return 'chip chip-fail';
+    return 'chip chip-pending';
   };
 
-  // 统计数据
-  const completedTasks = taskListData?.tasks?.filter(
-    t => t.status === 'completed' || t.status === 'partial_success'
-  ).length || 0;
-  const processingTasks = taskListData?.tasks?.filter(t => t.status === 'processing').length || 0;
+  const getChipLabel = (status: string) => {
+    if (status === 'processing') return '翻译中';
+    if (status === 'completed')  return '已完成';
+    if (status === 'partial_success') return '部分完成';
+    if (status === 'failed')     return '失败';
+    return '等待中';
+  };
 
-  // 任务列表表格列配置
-  const columns = [
-    {
-      title: '文件名',
-      dataIndex: 'filename',
-      key: 'filename',
-      width: 200,
-      ellipsis: true,
-      render: (filename: string, record: TranslationTask) => (
-        <Space>
-          <FileTextOutlined style={{ color: '#1890ff' }} />
-          <span>{filename}</span>
-          {record.bilingual && <Tag color="blue" style={{ fontSize: '10px' }}>双语</Tag>}
-        </Space>
-      ),
-    },
-    {
-      title: '状态',
-      dataIndex: 'status',
-      key: 'status',
-      width: 100,
-      render: (status: string) => getStatusTag(status),
-    },
-    {
-      title: '进度',
-      key: 'progress',
-      width: 180,
-      render: (_: unknown, record: TranslationTask) => (
-        <Progress
-          percent={Math.round(record.progress.percentage)}
-          size="small"
-          strokeColor={{
-            '0%': '#108ee9',
-            '100%': '#87d068',
-          }}
-          status={
-            record.status === 'failed'
-              ? 'exception'
-              : (record.status === 'completed' || record.status === 'partial_success')
-                ? 'success'
-                : 'active'
-          }
-        />
-      ),
-    },
-    {
-      title: '速度',
-      dataIndex: ['progress', 'speed'],
-      key: 'speed',
-      width: 100,
-      render: (speed: number) => (
-        <Text type="secondary">{speed.toFixed(1)} 块/分</Text>
-      ),
-    },
-    {
-      title: '创建时间',
-      dataIndex: 'created_at',
-      key: 'created_at',
-      width: 160,
-      render: (time: string) => (
-        <Text type="secondary" style={{ fontSize: '12px' }}>
-          {new Date(time).toLocaleString('zh-CN')}
-        </Text>
-      ),
-    },
-    {
-      title: '操作',
-      key: 'actions',
-      width: 200,
-      render: (_: unknown, record: TranslationTask) => (
-        <Space>
-          {(record.status === 'completed' || record.status === 'partial_success') && record.result_url && (
-            <>
-              <Tooltip title="下载 Markdown">
-                <Button
-                  type="primary"
-                  size="small"
-                  icon={<DownloadOutlined />}
-                  onClick={() => window.open(downloadResult(record.task_id, 'md'), '_blank')}
-                >
-                  MD
-                </Button>
-              </Tooltip>
-              {record.bilingual && (
-                <Tooltip title="下载双栏 HTML">
-                  <Button
-                    size="small"
-                    style={{ background: '#52c41a', borderColor: '#52c41a', color: 'white' }}
-                    icon={<DownloadOutlined />}
-                    onClick={() => window.open(downloadResult(record.task_id, 'html'), '_blank')}
-                  >
-                    HTML
-                  </Button>
-                </Tooltip>
-              )}
-            </>
-          )}
-          {(record.status === 'completed' || record.status === 'partial_success' || record.status === 'failed') && (
-            <Button
-              size="small"
-              danger
-              icon={<DeleteOutlined />}
-              onClick={() => deleteTaskMutation.mutate(record.task_id)}
-            />
-          )}
-        </Space>
-      ),
-    },
-  ];
+  const getBarClass = (status: string) => {
+    if (status === 'completed' || status === 'partial_success') return 'bar-fill done';
+    if (status === 'failed') return 'bar-fill fail';
+    return 'bar-fill';
+  };
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto' }}>
-      <Space direction="vertical" size="large" style={{ width: '100%' }}>
+    <div className="page">
 
-        {/* 页面标题 */}
-        <div style={{ textAlign: 'center', marginBottom: '16px' }}>
-          <Title level={2} style={{ marginBottom: '8px' }}>
-            <TranslationOutlined style={{ marginRight: '12px', color: '#1890ff' }} />
-            AI 翻译系统
-          </Title>
-          <Paragraph type="secondary">
-            支持 PDF、EPUB、Markdown 文件翻译，专为哲学文本优化
-          </Paragraph>
+      {/* ── Hero ── */}
+      <div className="hero">
+        <div className="hero-text">
+          <h1>哲学文本<em>翻译</em></h1>
+          <p>专为后现代哲学文本设计的异步翻译系统，支持术语表一致性检查与断点续传。</p>
         </div>
+        <div className="hero-stats">
+          <div>
+            <div className="hero-stat-val">{completedCount}</div>
+            <div className="hero-stat-label">已完成</div>
+          </div>
+          <div>
+            <div className={`hero-stat-val ${processingCount > 0 ? 'accent' : ''}`}>{processingCount}</div>
+            <div className="hero-stat-label">进行中</div>
+          </div>
+          <div>
+            <div className="hero-stat-val">{totalTasks}</div>
+            <div className="hero-stat-label">总任务</div>
+          </div>
+        </div>
+      </div>
 
-        {/* 统计卡片 */}
-        <Row gutter={16}>
-          <Col span={8}>
-            <Card bordered={false} style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
-              <Statistic
-                title={<span style={{ color: 'rgba(255,255,255,0.85)' }}>总任务数</span>}
-                value={taskListData?.total || 0}
-                valueStyle={{ color: '#fff' }}
-                prefix={<FileTextOutlined />}
-              />
-            </Card>
-          </Col>
-          <Col span={8}>
-            <Card bordered={false} style={{ background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)' }}>
-              <Statistic
-                title={<span style={{ color: 'rgba(255,255,255,0.85)' }}>进行中</span>}
-                value={processingTasks}
-                valueStyle={{ color: '#fff' }}
-                prefix={<ThunderboltOutlined />}
-              />
-            </Card>
-          </Col>
-          <Col span={8}>
-            <Card bordered={false} style={{ background: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)' }}>
-              <Statistic
-                title={<span style={{ color: 'rgba(255,255,255,0.85)' }}>已完成</span>}
-                value={completedTasks}
-                valueStyle={{ color: '#fff' }}
-                prefix={<CheckCircleOutlined />}
-              />
-            </Card>
-          </Col>
-        </Row>
+      <div className="rule" />
 
-        {/* 上传区域 */}
-        <Card
-          title={
-            <Space>
-              <UploadOutlined style={{ color: '#1890ff' }} />
-              <span>上传文件</span>
-            </Space>
-          }
-          style={{ borderRadius: '12px' }}
-        >
-          <Row gutter={24}>
-            <Col span={14}>
-              <Dragger {...uploadProps} style={{ borderRadius: '8px' }}>
-                <p className="ant-upload-drag-icon">
-                  <UploadOutlined style={{ fontSize: '48px', color: '#1890ff' }} />
-                </p>
-                <p className="ant-upload-text">点击或拖拽文件到此区域</p>
-                <p className="ant-upload-hint">
-                  支持 Markdown (.md)、PDF (.pdf)、EPUB (.epub) 格式
-                </p>
-              </Dragger>
-            </Col>
+      {/* ── Active Task Progress ── */}
+      {activeTask && (
+        <div className="progress-banner">
+          <div>
+            <div className="pb-label">
+              <span className="pb-dot" />
+              正在翻译
+            </div>
+            <div className="pb-filename">"{activeTask.filename}"</div>
+            <div className="pb-track">
+              <div className="pb-fill" style={{ width: `${activeTask.progress.percentage}%` }} />
+            </div>
+            <div className="pb-meta">
+              {activeTask.progress.current} / {activeTask.progress.total} 文本块
+              {activeTask.progress.total > 0 && activeTask.progress.speed > 0 && (
+                <> · 预计剩余 {Math.ceil((activeTask.progress.total - activeTask.progress.current) / activeTask.progress.speed)} 分钟</>
+              )}
+            </div>
+            <div className="pb-stats">
+              <span className="pb-stat"><strong>{activeTask.progress.speed.toFixed(1)}</strong> 块/分钟</span>
+              <span className="pb-stat"><strong>{Math.round(activeTask.progress.elapsed)}</strong> 秒已用</span>
+              {activeTask.bilingual && <span className="pb-stat"><strong>双语对照</strong>模式</span>}
+            </div>
+          </div>
+          <div className="pb-right">
+            <div className="pb-pct">{Math.round(activeTask.progress.percentage)}</div>
+            <div className="pb-pct-label">% 完成</div>
+          </div>
+        </div>
+      )}
 
-            <Col span={10}>
-              <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-                <div>
-                  <Text strong style={{ display: 'block', marginBottom: '8px' }}>术语表</Text>
-                  <Select
-                    placeholder="选择术语表 (可选)"
-                    style={{ width: '100%' }}
-                    value={selectedGlossary}
-                    onChange={setSelectedGlossary}
-                    allowClear
-                  >
-                    {glossaries.map((glossary) => (
-                      <Option key={glossary.id} value={glossary.id}>
-                        {glossary.name} ({glossary.term_count || 0} 个术语)
-                      </Option>
-                    ))}
-                  </Select>
-                </div>
+      {/* ── Completed Alert ── */}
+      {doneTask && (
+        <div className={`alert-banner ${doneTask.status === 'completed' ? 'success' : 'warn'}`}>
+          <div className="alert-body">
+            <div className="alert-title">{doneTask.status === 'completed' ? '翻译完成' : '翻译部分完成'}</div>
+            <div className="alert-desc">
+              {doneTask.status === 'completed'
+                ? `${doneTask.filename} 已全部翻译完成`
+                : doneTask.error || `${doneTask.filename} 有部分文本块翻译失败`}
+            </div>
+          </div>
+          <div className="alert-actions">
+            <button className="btn-download-md" onClick={() => window.open(downloadResult(doneTask.task_id, 'md'), '_blank')}>
+              <DownloadIcon /> 下载 Markdown
+            </button>
+            {doneTask.bilingual && (
+              <button className="btn-download-html" onClick={() => window.open(downloadResult(doneTask.task_id, 'html'), '_blank')}>
+                <DownloadIcon /> 下载双栏 HTML
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
-                <div>
-                  <Text strong style={{ display: 'block', marginBottom: '8px' }}>输出模式</Text>
-                  <div style={{
-                    padding: '16px',
-                    background: bilingual ? '#e6f7ff' : '#f5f5f5',
-                    borderRadius: '8px',
-                    border: bilingual ? '1px solid #91d5ff' : '1px solid #d9d9d9',
-                    transition: 'all 0.3s'
-                  }}>
-                    <Space>
-                      <Switch
-                        checked={bilingual}
-                        onChange={setBilingual}
-                        checkedChildren="开"
-                        unCheckedChildren="关"
-                      />
-                      <Tooltip title="启用后，输出文件将包含原文和译文对照">
-                        <Text strong style={{ color: bilingual ? '#1890ff' : undefined }}>
-                          双语对照模式
-                        </Text>
-                      </Tooltip>
-                    </Space>
-                    <Paragraph type="secondary" style={{ marginTop: '8px', marginBottom: 0, fontSize: '12px' }}>
-                      {bilingual
-                        ? '输出格式：原文（引用块）+ 译文，方便对照阅读'
-                        : '输出格式：仅包含中文译文'
-                      }
-                    </Paragraph>
-                  </div>
-                </div>
+      {/* ── Failed Alert ── */}
+      {failedTask && (
+        <div className="alert-banner error">
+          <div className="alert-body">
+            <div className="alert-title">翻译失败</div>
+            <div className="alert-desc">{failedTask.error || '未知错误，请查看日志'}</div>
+          </div>
+        </div>
+      )}
 
-                <Button
-                  type="primary"
-                  size="large"
-                  block
-                  onClick={handleStartTranslation}
-                  loading={createTaskMutation.isPending}
-                  disabled={fileList.length === 0}
-                  icon={<TranslationOutlined />}
-                  style={{
-                    height: '48px',
-                    borderRadius: '8px',
-                    background: fileList.length > 0 ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : undefined,
-                    border: 'none'
-                  }}
-                >
-                  {bilingual ? '开始翻译（双语对照）' : '开始翻译'}
-                </Button>
-              </Space>
-            </Col>
-          </Row>
-        </Card>
+      {/* ── Section 01: Upload ── */}
+      <div className="section">
+        <div className="section-header">
+          <span className="section-num">01</span>
+          <span className="section-title">上传文件</span>
+        </div>
+        <div className="upload-grid">
 
-        {/* 当前任务进度 */}
-        {currentTask && currentTask.status === 'processing' && (
-          <Card
-            title={
-              <Space>
-                <ThunderboltOutlined style={{ color: '#faad14' }} />
-                <span>正在翻译</span>
-                {currentTask.bilingual && <Tag color="blue">双语对照</Tag>}
-              </Space>
-            }
-            style={{ borderRadius: '12px', borderColor: '#faad14' }}
+          {/* Dropzone */}
+          <label
+            className={`dropzone ${dragging ? 'dragging' : ''} ${file ? 'has-file' : ''}`}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            onClick={(e) => { if ((e.target as HTMLElement).closest('.drop-clear')) e.preventDefault(); }}
           >
-            <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-              <div>
-                <Text strong>文件: </Text>
-                <Text>{currentTask.filename}</Text>
+            <input
+              type="file"
+              accept=".md,.pdf,.epub"
+              style={{ display: 'none' }}
+              onChange={handleFileInput}
+            />
+            <div className="drop-icon"><UploadIcon /></div>
+            {file ? (
+              <>
+                <div className="drop-title">文件已就绪</div>
+                <div className="drop-file-name">{file.name}</div>
+                <button
+                  className="drop-clear"
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setFile(null); }}
+                >
+                  ×
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="drop-title">将文件拖放于此</div>
+                <div className="drop-hint">或点击选择 · 每次一个文件</div>
+                <div className="format-pills">
+                  <span className="pill">markdown</span>
+                  <span className="pill">pdf</span>
+                  <span className="pill">epub</span>
+                </div>
+              </>
+            )}
+          </label>
+
+          {/* Config Panel */}
+          <div className="config-panel">
+            <div>
+              <label className="field-label">术语表</label>
+              <div className="select-wrap">
+                <select value={selectedGlossary} onChange={e => setSelectedGlossary(e.target.value)}>
+                  <option value="">不使用术语表</option>
+                  {glossaries.map(g => (
+                    <option key={g.id} value={g.id}>
+                      {g.name} ({g.term_count ?? 0} 个术语)
+                    </option>
+                  ))}
+                </select>
+                <span className="select-arrow">↓</span>
               </div>
+            </div>
 
-              <Progress
-                percent={Math.round(currentTask.progress.percentage)}
-                strokeColor={{
-                  '0%': '#108ee9',
-                  '100%': '#87d068',
-                }}
-                status="active"
-                strokeWidth={12}
-              />
+            <div>
+              <label className="field-label">输出模式</label>
+              <div
+                className={`toggle-row ${bilingual ? 'on' : ''}`}
+                onClick={() => setBilingual(v => !v)}
+              >
+                <div className="toggle-info">
+                  <div className="toggle-name">双语对照</div>
+                  <div className="toggle-desc">原文与译文并排输出</div>
+                </div>
+                <div className={`toggle-switch ${bilingual ? 'on' : 'off'}`} />
+              </div>
+            </div>
 
-              <Row gutter={16}>
-                <Col span={8}>
-                  <Statistic
-                    title="进度"
-                    value={currentTask.progress.current}
-                    suffix={`/ ${currentTask.progress.total} 块`}
-                    valueStyle={{ fontSize: '16px' }}
-                  />
-                </Col>
-                <Col span={8}>
-                  <Statistic
-                    title="速度"
-                    value={currentTask.progress.speed.toFixed(1)}
-                    suffix="块/分钟"
-                    valueStyle={{ fontSize: '16px' }}
-                  />
-                </Col>
-                <Col span={8}>
-                  <Statistic
-                    title="耗时"
-                    value={Math.round(currentTask.progress.elapsed)}
-                    suffix="秒"
-                    valueStyle={{ fontSize: '16px' }}
-                  />
-                </Col>
-              </Row>
-            </Space>
-          </Card>
-        )}
-
-        {/* 任务完成提示 */}
-        {currentTask && currentTask.status === 'completed' && (
-          <Alert
-            message="翻译完成"
-            description={
-              <Space>
-                <span>文件 {currentTask.filename} 已翻译完成</span>
-                <Button
-                  type="primary"
-                  size="small"
-                  icon={<DownloadOutlined />}
-                  onClick={() => window.open(downloadResult(currentTask.task_id, 'md'), '_blank')}
-                >
-                  下载 MD
-                </Button>
-                {currentTask.bilingual && (
-                  <Button
-                    size="small"
-                    style={{ background: '#52c41a', borderColor: '#52c41a', color: 'white' }}
-                    icon={<DownloadOutlined />}
-                    onClick={() => window.open(downloadResult(currentTask.task_id, 'html'), '_blank')}
-                  >
-                    下载 HTML
-                  </Button>
-                )}
-              </Space>
-            }
-            type="success"
-            showIcon
-            closable
-            style={{ borderRadius: '8px' }}
-          />
-        )}
-
-        {currentTask && currentTask.status === 'partial_success' && (
-          <Alert
-            message="翻译部分完成"
-            description={
-              <Space>
-                <span>{currentTask.error || `文件 ${currentTask.filename} 有部分文本块翻译失败`}</span>
-                <Button
-                  type="primary"
-                  size="small"
-                  icon={<DownloadOutlined />}
-                  onClick={() => window.open(downloadResult(currentTask.task_id, 'md'), '_blank')}
-                >
-                  下载 MD
-                </Button>
-                {currentTask.bilingual && (
-                  <Button
-                    size="small"
-                    style={{ background: '#52c41a', borderColor: '#52c41a', color: 'white' }}
-                    icon={<DownloadOutlined />}
-                    onClick={() => window.open(downloadResult(currentTask.task_id, 'html'), '_blank')}
-                  >
-                    下载 HTML
-                  </Button>
-                )}
-              </Space>
-            }
-            type="warning"
-            showIcon
-            closable
-            style={{ borderRadius: '8px' }}
-          />
-        )}
-
-        {currentTask && currentTask.status === 'failed' && (
-          <Alert
-            message="翻译失败"
-            description={currentTask.error || '未知错误'}
-            type="error"
-            showIcon
-            closable
-            style={{ borderRadius: '8px' }}
-          />
-        )}
-
-        {/* 任务列表 */}
-        <Card
-          title={
-            <Space>
-              <FileTextOutlined style={{ color: '#1890ff' }} />
-              <span>任务列表</span>
-            </Space>
-          }
-          extra={
-            <Button
-              icon={<ReloadOutlined spin={isRefetchingTasks} />}
-              onClick={() => {
-                refetchTasks().then(() => message.success('列表已刷新'));
-              }}
-              loading={isRefetchingTasks}
+            <button
+              className="btn-submit"
+              onClick={handleSubmit}
+              disabled={!file || createMutation.isPending}
             >
-              刷新
-            </Button>
-          }
-          style={{ borderRadius: '12px' }}
-        >
-          <Table
-            columns={columns}
-            dataSource={taskListData?.tasks || []}
-            loading={isLoadingTasks}
-            rowKey="task_id"
-            pagination={{
-              total: taskListData?.total || 0,
-              pageSize: 10,
-              showTotal: (total) => `共 ${total} 条`,
-              showSizeChanger: false,
-            }}
-            style={{ borderRadius: '8px' }}
-          />
-        </Card>
-      </Space>
+              {createMutation.isPending ? '创建中…' : bilingual ? '开始翻译（双语对照）' : '开始翻译'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Section 02: Task List ── */}
+      <div className="section">
+        <div className="section-header">
+          <span className="section-num">02</span>
+          <span className="section-title">任务列表</span>
+        </div>
+        <div className="table-wrap">
+          <div className="table-header">
+            <span className="table-header-title">历史记录</span>
+            <button
+              className="btn-refresh"
+              onClick={() => refetchTasks()}
+              disabled={isRefetching}
+            >
+              {isRefetching ? '刷新中…' : '刷新'}
+            </button>
+          </div>
+          <table className="task-table">
+            <thead>
+              <tr>
+                <th>文件名</th>
+                <th>状态</th>
+                <th>进度</th>
+                <th>速度</th>
+                <th>创建时间</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {isLoadingTasks ? (
+                <tr>
+                  <td colSpan={6} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-3)', fontWeight: 300 }}>
+                    加载中…
+                  </td>
+                </tr>
+              ) : tasks.length === 0 ? (
+                <tr>
+                  <td colSpan={6} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-3)', fontWeight: 300 }}>
+                    暂无任务
+                  </td>
+                </tr>
+              ) : tasks.map(task => (
+                <tr key={task.task_id}>
+                  <td>
+                    <div className="td-filename">{task.filename}</div>
+                    <div className="td-meta">
+                      {task.bilingual && '双语对照 · '}
+                      {task.progress.total > 0 && `${task.progress.total} 块`}
+                    </div>
+                  </td>
+                  <td>
+                    <span className={getChipClass(task.status)}>
+                      {getChipLabel(task.status)}
+                    </span>
+                  </td>
+                  <td>
+                    <div className="bar-wrap">
+                      <div
+                        className={getBarClass(task.status)}
+                        style={{ width: `${task.progress.percentage}%` }}
+                      />
+                    </div>
+                    <span className="td-pct">{task.progress.percentage.toFixed(1)}%</span>
+                  </td>
+                  <td className="td-speed">
+                    {task.progress.speed > 0 ? task.progress.speed.toFixed(1) : '—'}
+                  </td>
+                  <td className="td-time">{formatTime(task.created_at)}</td>
+                  <td>
+                    <div className="td-actions">
+                      {(task.status === 'completed' || task.status === 'partial_success') && task.result_url && (
+                        <>
+                          <button
+                            className="btn-dl-md"
+                            onClick={() => window.open(downloadResult(task.task_id, 'md'), '_blank')}
+                          >
+                            <DownloadIcon /> MD
+                          </button>
+                          {task.bilingual && (
+                            <button
+                              className="btn-dl-html"
+                              onClick={() => window.open(downloadResult(task.task_id, 'html'), '_blank')}
+                            >
+                              <DownloadIcon /> HTML
+                            </button>
+                          )}
+                        </>
+                      )}
+                      {['completed', 'partial_success', 'failed'].includes(task.status) && (
+                        <button
+                          className="btn-del"
+                          onClick={() => deleteMutation.mutate(task.task_id)}
+                          disabled={deleteMutation.isPending}
+                        >
+                          删除
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
     </div>
   );
 };

@@ -1,95 +1,68 @@
-/**
- * 主应用组件
- */
 import React, { useState } from 'react';
-import { Layout, Menu, ConfigProvider, theme } from 'antd';
-import { TranslationOutlined, BookOutlined } from '@ant-design/icons';
+import { ConfigProvider, App as AntApp } from 'antd';
+import zhCN from 'antd/locale/zh_CN';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import TranslationPage from './components/TranslationPage';
 import GlossaryManager from './components/GlossaryManager';
-import zhCN from 'antd/locale/zh_CN';
 
-const { Header, Content } = Layout;
-
-// 创建 React Query 客户端
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: {
-      refetchOnWindowFocus: false,
-      retry: 1,
-    },
+    queries: { refetchOnWindowFocus: false, retry: 1 },
   },
 });
 
-type MenuItem = {
-  key: string;
-  icon: React.ReactNode;
-  label: string;
-};
-
-const menuItems: MenuItem[] = [
-  {
-    key: 'translation',
-    icon: <TranslationOutlined />,
-    label: '翻译',
-  },
-  {
-    key: 'glossary',
-    icon: <BookOutlined />,
-    label: '术语表管理',
-  },
-];
-
 const App: React.FC = () => {
-  const [currentPage, setCurrentPage] = useState<string>('translation');
-
-  const renderContent = () => {
-    switch (currentPage) {
-      case 'translation':
-        return <TranslationPage />;
-      case 'glossary':
-        return <GlossaryManager />;
-      default:
-        return <TranslationPage />;
-    }
-  };
+  const [currentPage, setCurrentPage] = useState<'translation' | 'glossary'>('translation');
 
   return (
     <QueryClientProvider client={queryClient}>
       <ConfigProvider
         locale={zhCN}
         theme={{
-          algorithm: theme.defaultAlgorithm,
           token: {
-            colorPrimary: '#1890ff',
+            colorPrimary: '#2d4a3e',
+            colorBgContainer: '#ffffff',
+            borderRadius: 5,
+            fontFamily: "'DM Sans', sans-serif",
+            colorText: '#1a1816',
+            colorTextSecondary: '#5c5751',
+            colorBorder: '#e4e0d8',
+            colorBgElevated: '#ffffff',
           },
         }}
       >
-        <Layout style={{ minHeight: '100vh' }}>
-          <Header style={{ display: 'flex', alignItems: 'center', background: '#001529' }}>
-            <div
-              style={{
-                color: 'white',
-                fontSize: '20px',
-                fontWeight: 'bold',
-                marginRight: '50px',
-              }}
-            >
-              AI 翻译系统
-            </div>
-            <Menu
-              theme="dark"
-              mode="horizontal"
-              selectedKeys={[currentPage]}
-              items={menuItems}
-              onClick={({ key }) => setCurrentPage(key)}
-              style={{ flex: 1, minWidth: 0 }}
-            />
-          </Header>
-          <Content style={{ background: '#f0f2f5' }}>
-            {renderContent()}
-          </Content>
-        </Layout>
+        <AntApp>
+          <div className="app">
+            <nav className="topnav">
+              <div className="nav-logo">
+                <span className="wordmark">Translator</span>
+                <span className="edition">LLM Edition</span>
+              </div>
+
+              <div className="nav-tabs">
+                <button
+                  className={`nav-tab ${currentPage === 'translation' ? 'active' : ''}`}
+                  onClick={() => setCurrentPage('translation')}
+                >
+                  翻译
+                </button>
+                <button
+                  className={`nav-tab ${currentPage === 'glossary' ? 'active' : ''}`}
+                  onClick={() => setCurrentPage('glossary')}
+                >
+                  术语表
+                </button>
+              </div>
+
+              <div className="nav-meta">
+                <div className="online-dot" />
+                Worker 在线
+              </div>
+            </nav>
+
+            {currentPage === 'translation' ? <TranslationPage /> : <GlossaryManager />}
+          </div>
+        </AntApp>
       </ConfigProvider>
     </QueryClientProvider>
   );
