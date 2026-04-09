@@ -6,6 +6,7 @@
 import asyncio
 import aiofiles
 import time
+import re
 
 
 class OutputManager:
@@ -96,11 +97,18 @@ class OutputManager:
         Returns:
             格式化后的双语对照文本
         """
-        # 将原文每行转换为引用格式
-        original_lines = original.strip().split('\n')
-        quoted_original = '\n'.join(f'> {line}' for line in original_lines)
+        translation_image_paths = set(re.findall(r'!\[[^\]]*\]\(([^)]+)\)', translation))
+        original_lines = []
+        for line in original.strip().split('\n'):
+            image_match = re.fullmatch(r'!\[[^\]]*\]\(([^)]+)\)', line.strip())
+            if image_match and image_match.group(1) in translation_image_paths:
+                continue
+            original_lines.append(line)
 
-        return f"{quoted_original}\n\n{translation}\n\n---"
+        quoted_original = '\n'.join(f'> {line}' for line in original_lines if line or len(original_lines) == 1)
+        if quoted_original:
+            return f"{quoted_original}\n\n{translation}\n\n---"
+        return f"{translation}\n\n---"
 
     @property
     def current_index(self) -> int:

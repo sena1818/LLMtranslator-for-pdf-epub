@@ -1,6 +1,7 @@
 import asyncio
 import tempfile
 import unittest
+import zipfile
 from datetime import datetime
 from pathlib import Path
 
@@ -93,5 +94,111 @@ class TaskPersistenceAndExportTestCase(unittest.TestCase):
             finally:
                 files_routes.db = original_db
                 for path in [mono_path, bi_path, html_path]:
+                    if path.exists():
+                        path.unlink()
+
+    def test_zip_bundle_contains_assets_only(self):
+        async def seed(db):
+            await db.initialize()
+            await db.save_task(
+                TranslationTask(
+                    task_id="zip-task",
+                    filename="zip.md",
+                    status=TaskStatus.COMPLETED,
+                    bilingual=False,
+                    progress=TaskProgress(current=1, total=1, percentage=100.0),
+                    created_at=datetime.now(),
+                    updated_at=datetime.now(),
+                )
+            )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db = Database(str(Path(temp_dir) / "translation.db"))
+            asyncio.run(seed(db))
+
+            original_db = files_routes.db
+            files_routes.db = db
+
+            result_dir = Path("data/results")
+            result_dir.mkdir(parents=True, exist_ok=True)
+            markdown_path = result_dir / "zip-task.md"
+            asset_path = result_dir / "assets" / "zip-task" / "cover.jpg"
+            bundle_path = result_dir / "downloads" / "zip-task.assets.zip"
+            asset_path.parent.mkdir(parents=True, exist_ok=True)
+            markdown_path.write_text("![cover](assets/zip-task/cover.jpg)\n", encoding="utf-8")
+            asset_path.write_bytes(b"fake-image")
+
+            try:
+                app = FastAPI()
+                app.include_router(files_routes.router)
+                client = TestClient(app)
+
+                response = client.get("/api/files/results/zip-task?format=zip&variant=mono")
+                self.assertEqual(response.status_code, 200)
+                self.assertIn("application/zip", response.headers["content-type"])
+                self.assertTrue(bundle_path.exists())
+
+                with zipfile.ZipFile(bundle_path) as archive:
+                    names = set(archive.namelist())
+                    self.assertIn("assets/zip-task/cover.jpg", names)
+                    self.assertNotIn("zip-task.md", names)
+            finally:
+                files_routes.db = original_db
+                for path in [markdown_path, bundle_path, asset_path]:
+                    if path.exists():
+                        path.unlink()
+                for directory in [
+                    result_dir / "assets" / "zip-task",
+                    result_dir / "assets",
+                    result_dir / "downloads",
+                ]:
+                    if directory.exists():
+                        try:
+                            directory.rmdir()
+                        except OSError:
+                            pass
+
+    def test_bilingual_markdown_can_backfill_mono_variant(self):
+        async def seed(db):
+            await db.initialize()
+            await db.save_task(
+                TranslationTask(
+                    task_id="legacy-bi",
+                    filename="legacy.md",
+                    status=TaskStatus.COMPLETED,
+                    bilingual=True,
+                    progress=TaskProgress(current=1, total=1, percentage=100.0),
+                    created_at=datetime.now(),
+                    updated_at=datetime.now(),
+                )
+            )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db = Database(str(Path(temp_dir) / "translation.db"))
+            asyncio.run(seed(db))
+
+            original_db = files_routes.db
+            files_routes.db = db
+
+            result_dir = Path("data/results")
+            result_dir.mkdir(parents=True, exist_ok=True)
+            mono_path = result_dir / "legacy-bi.md"
+            bilingual_path = result_dir / "legacy-bi.bilingual.md"
+            bilingual_path.write_text("# 标题\n\n> source line\n\n中文译文\n\n---\n", encoding="utf-8")
+            if mono_path.exists():
+                mono_path.unlink()
+
+            try:
+                app = FastAPI()
+                app.include_router(files_routes.router)
+                client = TestClient(app)
+
+                response = client.get("/api/files/results/legacy-bi?format=md&variant=mono")
+                self.assertEqual(response.status_code, 200)
+                self.assertTrue(mono_path.exists())
+                self.assertIn("中文译文", mono_path.read_text(encoding="utf-8"))
+            finally:
+                files_routes.db = original_db
+                for path in [mono_path, bilingual_path]:
                     if path.exists():
                         path.unlink()

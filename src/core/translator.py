@@ -8,7 +8,6 @@ import logging
 import time
 import re
 import hashlib
-from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Callable
 from pathlib import Path
 
@@ -22,68 +21,10 @@ from .rate_limiter import RateLimiter
 from .output_manager import OutputManager
 from .translation_cache import TranslationCache
 from .validator import QualityReport, TranslationValidator
+from ..domain.models.translation_models import DocumentProfile, TranslationResult
 
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class DocumentProfile:
-    """文档分析 agent 产出的全局上下文"""
-
-    summary: str = ""
-    style_notes: List[str] = field(default_factory=list)
-    terminology_hints: List[str] = field(default_factory=list)
-    section_overview: List[str] = field(default_factory=list)
-
-    @classmethod
-    def empty(cls) -> "DocumentProfile":
-        return cls()
-
-    @property
-    def fingerprint(self) -> str:
-        payload = "|".join(
-            [
-                self.summary,
-                "\n".join(self.style_notes),
-                "\n".join(self.terminology_hints),
-                "\n".join(self.section_overview),
-            ]
-        ).encode("utf-8")
-        return hashlib.sha1(payload).hexdigest()[:12]
-
-    def to_prompt_text(self) -> str:
-        if not any([self.summary, self.style_notes, self.terminology_hints, self.section_overview]):
-            return "无额外文档级分析。"
-
-        parts = []
-        if self.summary:
-            parts.append(f"文档摘要: {self.summary}")
-        if self.style_notes:
-            parts.append("风格约束:\n" + "\n".join(f"- {item}" for item in self.style_notes))
-        if self.terminology_hints:
-            parts.append("术语提示:\n" + "\n".join(f"- {item}" for item in self.terminology_hints))
-        if self.section_overview:
-            parts.append("章节概览:\n" + "\n".join(f"- {item}" for item in self.section_overview))
-        return "\n\n".join(parts)
-
-
-class TranslationResult:
-    """翻译结果"""
-    def __init__(self, chunk_index: int, original: str, translation: str,
-                 success: bool, retry_count: int = 0, duration: float = 0.0,
-                 chunk_id: str = "", quality_report: Optional[dict] = None,
-                 repaired: bool = False, cached: bool = False):
-        self.chunk_index = chunk_index
-        self.original = original
-        self.translation = translation
-        self.success = success
-        self.retry_count = retry_count
-        self.duration = duration
-        self.chunk_id = chunk_id
-        self.quality_report = quality_report or {}
-        self.repaired = repaired
-        self.cached = cached
 
 
 class TranslationEngine:
@@ -130,6 +71,8 @@ class TranslationEngine:
         self.chunk_planner = ChunkPlanner(
             chunk_size=self.config.chunk_size,
             context_window=self.config.context_window,
+            target_chunk_size=self.config.target_chunk_size,
+            min_chunk_size=self.config.min_chunk_size,
         )
         self.validator = TranslationValidator(
             untranslated_word_span=self.config.untranslated_word_span,

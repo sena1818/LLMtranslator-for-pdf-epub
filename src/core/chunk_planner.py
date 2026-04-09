@@ -38,14 +38,22 @@ class TextChunk:
 class ChunkPlanner:
     """章节感知的文本分块器"""
 
-    def __init__(self, chunk_size: int = 2000, context_window: int = 800):
+    def __init__(
+        self,
+        chunk_size: int = 3600,
+        context_window: int = 1400,
+        target_chunk_size: Optional[int] = None,
+        min_chunk_size: Optional[int] = None,
+    ):
         self.chunk_size = chunk_size
         self.context_window = context_window
+        self.target_chunk_size = min(target_chunk_size or int(chunk_size * 0.9), chunk_size)
+        self.min_chunk_size = min_chunk_size or max(600, int(self.target_chunk_size * 0.4))
 
     def plan(self, text: str) -> List[TextChunk]:
         """将完整文档切成结构化 chunk"""
         blocks = self._extract_blocks(text)
-        raw_chunks = self._pack_blocks(blocks)
+        raw_chunks = self._merge_short_chunks(self._pack_blocks(blocks))
 
         chunks: List[TextChunk] = []
         previous_text = ""
@@ -189,6 +197,43 @@ class ChunkPlanner:
 
         flush_chunk()
         return raw_chunks
+
+    def _merge_short_chunks(self, raw_chunks: List[dict]) -> List[dict]:
+        """将过短 chunk 与相邻同章节内容合并，避免把长论证切得太碎。"""
+        if not raw_chunks:
+            return raw_chunks
+
+        merged: List[dict] = []
+
+        for chunk in raw_chunks:
+            if not merged:
+                merged.append(chunk)
+                continue
+
+            previous = merged[-1]
+            same_section = previous["section_path"] == chunk["section_path"]
+            combined = f"{previous['text']}\n\n{chunk['text']}".strip()
+            previous_is_short = len(previous["text"]) < self.min_chunk_size
+
+            if same_section and previous_is_short and len(combined) <= self.chunk_size:
+                previous["text"] = combined
+                continue
+
+            merged.append(chunk)
+
+        if len(merged) >= 2:
+            last = merged[-1]
+            before_last = merged[-2]
+            if (
+                len(last["text"]) < self.min_chunk_size
+                and last["section_path"] == before_last["section_path"]
+            ):
+                candidate = f"{before_last['text']}\n\n{last['text']}".strip()
+                if len(candidate) <= self.chunk_size:
+                    before_last["text"] = candidate
+                    merged.pop()
+
+        return merged
 
     def _split_oversized_block(self, text: str) -> List[str]:
         """对超长单块做降级切分"""

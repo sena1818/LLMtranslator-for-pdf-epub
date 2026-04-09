@@ -28,6 +28,28 @@ Another paragraph.
         self.assertIn("当前章节", chunks[1].context_text)
         self.assertTrue(chunks[0].chunk_id.startswith("chunk-0000-"))
 
+    def test_short_chunks_are_merged_with_same_section(self):
+        planner = ChunkPlanner(
+            chunk_size=120,
+            target_chunk_size=100,
+            min_chunk_size=50,
+            context_window=40,
+        )
+        text = """# Section
+
+Short intro.
+
+Another short paragraph that should be merged into the same chunk.
+
+Final remark.
+"""
+
+        chunks = planner.plan(text)
+
+        self.assertEqual(len(chunks), 1)
+        self.assertIn("Short intro.", chunks[0].text)
+        self.assertIn("Another short paragraph", chunks[0].text)
+
 
 class TranslationValidatorTestCase(unittest.TestCase):
     def test_validator_flags_untranslated_and_terminology_issues(self):

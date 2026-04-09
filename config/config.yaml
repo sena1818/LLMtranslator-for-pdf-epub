@@ -23,9 +23,11 @@ concurrency:
 
 # 文本分块
 text_splitting:
-  chunk_size: 2000
+  chunk_size: 3600
+  target_chunk_size: 3200
+  min_chunk_size: 1200
   chunk_overlap: 200
-  context_window: 800
+  context_window: 1400
   separators: ["\n\n", "\n", ".", "!", "?", " ", ""]
 
 # 路径配置 (相对于项目根目录)

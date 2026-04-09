@@ -18,10 +18,10 @@ import sys
 # 添加 src 到路径
 sys.path.insert(0, str(Path(__file__).parent))
 
-from src.core.translator import TranslationEngine
 from src.converters.document_converter import DocumentConverter
 from src.utils.config_loader import get_config
 from src.services.markdown_formatter import SmartMarkdownFormatter
+from src.application.use_cases.run_translation_pipeline import RunTranslationPipeline
 
 # 配置日志
 logging.basicConfig(
@@ -157,10 +157,10 @@ class TranslationPipeline:
 
         # 步骤 4: 初始化翻译引擎
         logger.info("⚙️ 初始化翻译引擎...")
-        engine = TranslationEngine(glossary=glossary)
+        translation_use_case = RunTranslationPipeline(glossary=glossary)
 
         # 步骤 5: 文本分块
-        chunks = engine.plan_chunks(text)
+        chunks = translation_use_case.plan_chunks(text)
         logger.info(f"✂️ 文本分块完成: {len(chunks)} 个块")
 
         # 步骤 6: 确定输出路径
@@ -209,13 +209,14 @@ class TranslationPipeline:
             logger.info("🚀 开始翻译...")
         logger.info("="*60)
 
-        results = await engine.translate_batch(
+        pipeline_output = await translation_use_case.execute(
             text=text,
             output_path=output_file,
             progress_callback=progress_callback,
             bilingual=bilingual,
             prepared_chunks=chunks,
         )
+        results = pipeline_output.results
 
         # 步骤 9: 智能格式化清理
         if not skip_formatting:
