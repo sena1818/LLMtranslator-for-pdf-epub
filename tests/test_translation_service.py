@@ -81,7 +81,9 @@ class TranslationServiceStatusTestCase(unittest.TestCase):
                 )
                 await service.start_translation(task.task_id)
                 saved = await service.get_task(task.task_id)
-                return task.task_id, saved
+                mono_content = (Path("data/results") / f"{task.task_id}.md").read_text(encoding="utf-8")
+                bilingual_content = (Path("data/results") / f"{task.task_id}.bilingual.md").read_text(encoding="utf-8")
+                return task.task_id, saved, mono_content, bilingual_content
             finally:
                 translation_service_module.TranslationEngine = original_engine
                 translation_service_module.DocumentConverter = original_converter
@@ -89,19 +91,24 @@ class TranslationServiceStatusTestCase(unittest.TestCase):
                 if task is not None:
                     upload_path = Path("data/uploads") / f"{task.task_id}_service_case.md"
                     result_path = Path("data/results") / f"{task.task_id}.md"
+                    bilingual_result_path = Path("data/results") / f"{task.task_id}.bilingual.md"
                     if upload_path.exists():
                         upload_path.unlink()
                     if result_path.exists():
                         result_path.unlink()
+                    if bilingual_result_path.exists():
+                        bilingual_result_path.unlink()
                 temp_dir.cleanup()
 
-        task_id, saved = asyncio.run(scenario())
+        task_id, saved, mono_content, bilingual_content = asyncio.run(scenario())
 
         self.assertEqual(saved.status.value, "partial_success")
         self.assertTrue(saved.bilingual)
         self.assertEqual(saved.progress.current, 2)
         self.assertEqual(saved.result_url, f"/api/files/results/{task_id}")
         self.assertIn("失败块索引", saved.error)
+        self.assertIn("译文 1", mono_content)
+        self.assertIn("> chunk-0", bilingual_content)
 
     def test_reuses_existing_epub_markdown_after_interruption(self):
         async def scenario():

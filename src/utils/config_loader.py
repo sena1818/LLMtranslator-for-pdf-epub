@@ -118,7 +118,17 @@ class Config:
     @property
     def chunk_size(self) -> int:
         """获取文本块大小"""
-        return self.get("text_splitting.chunk_size", 2000)
+        return self.get("text_splitting.chunk_size", 3600)
+
+    @property
+    def target_chunk_size(self) -> int:
+        """理想目标块大小"""
+        return self.get("text_splitting.target_chunk_size", 3200)
+
+    @property
+    def min_chunk_size(self) -> int:
+        """尽量避免生成过小块"""
+        return self.get("text_splitting.min_chunk_size", 1200)
 
     @property
     def chunk_overlap(self) -> int:
@@ -128,7 +138,7 @@ class Config:
     @property
     def context_window(self) -> int:
         """获取传给模型的上一块上下文窗口"""
-        return self.get("text_splitting.context_window", 800)
+        return self.get("text_splitting.context_window", 1400)
 
     @property
     def enable_qa_check(self) -> bool:

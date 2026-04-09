@@ -11,9 +11,9 @@ from ..models.task import TranslationTask, TaskStatus, TaskProgress
 from ..database.db import Database
 from .glossary_service import GlossaryService
 
-# 导入现有的翻译引擎（完全复用）
-from ...core.translator import TranslationEngine
 from ...converters.document_converter import DocumentConverter
+from ...services.export_service import ExportService
+from ...application.use_cases.run_translation_pipeline import RunTranslationPipeline
 
 
 class TranslationService:
@@ -134,10 +134,10 @@ class TranslationService:
                     glossary = glossary_data.get("terms", {})
 
             # 5. 初始化翻译引擎
-            engine = TranslationEngine(glossary=glossary)
+            translation_use_case = RunTranslationPipeline(glossary=glossary)
 
             # 6. 文本分块
-            chunks = engine.plan_chunks(text)
+            chunks = translation_use_case.plan_chunks(text)
             task.progress.current = 0
             task.progress.total = len(chunks)
             task.progress.percentage = 0.0
@@ -149,13 +149,11 @@ class TranslationService:
             # 7. 准备输出路径
             result_dir = Path("data/results")
             result_dir.mkdir(parents=True, exist_ok=True)
-            output_path = result_dir / f"{task_id}.md"
+            mono_output_path = result_dir / f"{task_id}.md"
+            bilingual_output_path = result_dir / f"{task_id}.bilingual.md"
+            engine_output_path = bilingual_output_path if task.bilingual else mono_output_path
 
-            # 初始化输出文件
-            with open(output_path, 'w', encoding='utf-8') as f:
-                mode_text = "（双语对照）" if task.bilingual else ""
-                f.write(f"# {task.filename} - 中文翻译{mode_text}\n\n")
-                f.write(f"> 由 AI 自动翻译\n\n")
+            self._initialize_output_file(engine_output_path, task.filename, task.bilingual)
 
             # 8. 定义进度回调
             start_time = asyncio.get_event_loop().time()
@@ -183,13 +181,49 @@ class TranslationService:
 
             # 9. 执行翻译 (支持双语对照模式)
             logger.info("🎬 开始调用 LLM 进行翻译...")
-            results = await engine.translate_batch(
+            pipeline_output = await translation_use_case.execute(
                 text=text,
-                output_path=output_path,
+                output_path=engine_output_path,
                 progress_callback=progress_callback,
                 bilingual=task.bilingual,
                 prepared_chunks=chunks,
             )
+            results = pipeline_output.results
+
+            self._write_result_markdown(
+                output_path=mono_output_path,
+                filename=task.filename,
+                results=results,
+                bilingual=False,
+            )
+
+            if task.bilingual:
+                self._write_result_markdown(
+                    output_path=bilingual_output_path,
+                    filename=task.filename,
+                    results=results,
+                    bilingual=True,
+                )
+
+            asset_sources = []
+            if temp_dir.exists():
+                asset_sources.extend([
+                    temp_dir,
+                    temp_dir / "images",
+                    temp_dir / "images" / "images",
+                ])
+            copied_assets = []
+            for markdown_path in [mono_output_path, bilingual_output_path if task.bilingual else None]:
+                if markdown_path is None or not markdown_path.exists():
+                    continue
+                copied_assets = ExportService.sync_result_assets(
+                    markdown_path=markdown_path,
+                    asset_sources=asset_sources,
+                    task_id=task_id,
+                ) or copied_assets
+
+            if copied_assets:
+                logger.info("🖼️ 已同步 %s 张图片到结果目录", len(copied_assets))
 
             # 10. 根据成功率标记任务状态
             failed_results = [result for result in results if not result.success]
@@ -221,7 +255,7 @@ class TranslationService:
                 f"✅ 翻译任务结束: status={task.status.value}, "
                 f"成功 {success_count} / 失败 {failed_count}, "
                 f"修复 {sum(1 for result in results if getattr(result, 'repaired', False))}, "
-                f"结果保存在: {output_path}"
+                f"结果保存在: {mono_output_path}"
             )
 
         except Exception as e:
@@ -246,6 +280,43 @@ class TranslationService:
             if candidate.is_file() and candidate.stat().st_size > 0
         )
         return md_files[0] if md_files else None
+
+    def _initialize_output_file(self, output_path: Path, filename: str, bilingual: bool) -> None:
+        """初始化结果文件头"""
+        with open(output_path, 'w', encoding='utf-8') as f:
+            mode_text = "（双语对照）" if bilingual else ""
+            f.write(f"# {filename} - 中文翻译{mode_text}\n\n")
+            f.write("> 由 AI 自动翻译\n\n")
+
+    def _write_result_markdown(
+        self,
+        output_path: Path,
+        filename: str,
+        results: List,
+        bilingual: bool,
+    ) -> None:
+        """根据翻译结果渲染最终 Markdown，统一单语/双语产物格式。"""
+        self._initialize_output_file(output_path, filename, bilingual)
+
+        with open(output_path, 'a', encoding='utf-8') as f:
+            for result in sorted(results, key=lambda item: item.chunk_index):
+                if result.success:
+                    if bilingual:
+                        original_lines = result.original.strip().split('\n')
+                        quoted_original = '\n'.join(f'> {line}' for line in original_lines)
+                        content = f"{quoted_original}\n\n{result.translation}\n\n---"
+                    else:
+                        content = result.translation
+                else:
+                    content = (
+                        f"\n\n> **[翻译失败 - Chunk {result.chunk_index}]**\n"
+                        f"> *API 请求失败或超时,请根据以下原文手动补全:*\n\n"
+                        f"```text\n{result.original[:500]}...\n```\n\n"
+                    )
+
+                f.write("\n\n")
+                f.write(content)
+                f.write("\n\n")
 
     async def get_task(self, task_id: str) -> Optional[TranslationTask]:
         """获取任务"""
@@ -273,10 +344,23 @@ class TranslationService:
         if result_file.exists():
             result_file.unlink()
 
+        bilingual_result_file = Path(f"data/results/{task_id}.bilingual.md")
+        if bilingual_result_file.exists():
+            bilingual_result_file.unlink()
+
         # 删除导出的 HTML 文件
         html_file = Path(f"data/results/{task_id}.html")
         if html_file.exists():
             html_file.unlink()
+
+        downloads_dir = Path("data/results/downloads")
+        if downloads_dir.exists():
+            for bundle_path in downloads_dir.glob(f"{task_id}.*.zip"):
+                bundle_path.unlink()
+
+        assets_dir = Path(f"data/results/assets/{task_id}")
+        if assets_dir.exists():
+            shutil.rmtree(assets_dir)
 
         # 删除临时目录 (PDF/EPUB 转换的中间文件)
         temp_dir = Path(f"data/temp/{task_id}")
