@@ -83,11 +83,11 @@ python3 -m unittest discover -s tests -v
 
 ## 📖 详细文档
 
-- [翻译系统使用指南](翻译系统使用指南.md) - 完整的使用说明
-- [格式化工具使用指南](格式化工具使用指南.md) - Markdown 格式化工具文档
-- [本地运行指南](本地运行指南.md) - Web 界面部署指南
-- [LangChain / LangGraph 学习地图](LangChain_LangGraph学习地图.md) - 面向本项目的学习路线
-- [CLAUDE.md](CLAUDE.md) - 项目架构和技术细节
+- [使用指南](docs/使用指南.md) - 完整的 CLI/Web 使用说明
+- [本地运行](docs/本地运行.md) - 快速上手步骤
+- [格式化指南](docs/格式化指南.md) - Markdown 格式化工具说明
+- [Web 启动指南](docs/Web启动.md) - Web 界面部署与内网穿透
+- [CLAUDE.md](CLAUDE.md) - 项目架构和技术细节（AI Agent 工作指导）
 
 ## 🎯 功能演示
 
@@ -288,7 +288,7 @@ python translate.py data/input/input.md -g data/glossaries/my_glossary.json
 - API 负责创建任务并写入 SQLite 队列
 - worker 负责认领 `pending` 任务并执行翻译
 - 默认 `run_server.py` 会启一个内联 worker，单机开箱即用
-- 生产或长任务场景推荐单独运行 [run_worker.py](/Users/sena/Desktop/LLMAgent/translator/run_worker.py)
+- 生产或长任务场景推荐单独运行 `run_worker.py`
 - `python run_worker.py --processes N --parallel-tasks M` 可直接横向扩到多进程，多进程之间通过数据库原子认领避免重复消费
 
 - `pending`: 任务已创建，等待后台启动
