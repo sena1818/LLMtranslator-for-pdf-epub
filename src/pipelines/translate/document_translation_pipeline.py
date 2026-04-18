@@ -28,8 +28,8 @@ class TranslationPipelineOutput:
 class DocumentTranslationPipeline:
     """封装文本分块与批量翻译，供 CLI / API 共用。"""
 
-    def __init__(self, glossary: Optional[Dict[str, str]] = None):
-        self.engine = TranslationEngine(glossary=glossary or {})
+    def __init__(self, glossary: Optional[Dict[str, str]] = None, engine_cls=TranslationEngine):
+        self.engine = engine_cls(glossary=glossary or {})
 
     def plan_chunks(self, text: str) -> List[TextChunk]:
         """结构化分块"""

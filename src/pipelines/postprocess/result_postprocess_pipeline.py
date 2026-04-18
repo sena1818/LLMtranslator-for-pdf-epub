@@ -11,8 +11,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Iterable, List, Optional
 
-from ...services.export_service import ExportService
-from ...services.markdown_formatter import SmartMarkdownFormatter
+from .export_service import ExportService
+from .markdown_formatter import SmartMarkdownFormatter
 
 
 class ResultPostprocessPipeline:
@@ -30,7 +30,7 @@ class ResultPostprocessPipeline:
 
     def sync_assets(
         self,
-        markdown_paths: Iterable[Path],
+        markdown_paths: Iterable[Path | None],
         asset_sources: Iterable[Path],
         task_id: str,
     ) -> List[str]:
@@ -38,14 +38,16 @@ class ResultPostprocessPipeline:
         copied: List[str] = []
         normalized_sources = [Path(source) for source in asset_sources if Path(source).exists()]
         for markdown_path in markdown_paths:
+            if markdown_path is None:
+                continue
             if not markdown_path.exists():
                 continue
-            copied = ExportService.sync_result_assets(
+            copied.extend(ExportService.sync_result_assets(
                 markdown_path=markdown_path,
                 asset_sources=normalized_sources,
                 task_id=task_id,
-            ) or copied
-        return copied
+            ) or [])
+        return sorted(set(copied))
 
     def export_bilingual_html(
         self,

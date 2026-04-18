@@ -1,6 +1,6 @@
 import unittest
 
-from src.core.chunk_planner import ChunkPlanner
+from src.domain.rules.chunk_planning import ChunkPlanner
 from src.core.validator import TranslationValidator
 
 

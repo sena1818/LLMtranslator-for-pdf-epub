@@ -5,7 +5,7 @@ from pathlib import Path
 
 from src.api.database.db import Database
 from src.api.services import translation_service as translation_service_module
-from src.core.chunk_planner import TextChunk
+from src.domain.rules.chunk_planning import TextChunk
 from src.core.translator import TranslationResult
 
 

@@ -4,9 +4,13 @@
 解决异步并发导致的乱序输出问题
 """
 import asyncio
-import aiofiles
 import time
 import re
+
+try:
+    import aiofiles
+except ImportError:  # pragma: no cover - 仅在瘦测试环境退化为同步写入
+    aiofiles = None
 
 
 class OutputManager:
@@ -73,18 +77,29 @@ class OutputManager:
             self.buffer[index] = final_content
 
             # 3. 尝试连续写入 (Flush Buffer)
-            async with aiofiles.open(self.output_path, 'a', encoding='utf-8') as f:
-                while self.next_index in self.buffer:
-                    text_to_write = self.buffer[self.next_index]
+            if aiofiles is None:
+                with open(self.output_path, 'a', encoding='utf-8') as f:
+                    while self.next_index in self.buffer:
+                        text_to_write = self.buffer[self.next_index]
+                        f.write("\n\n")
+                        f.write(text_to_write)
+                        f.write("\n\n")
+                        del self.buffer[self.next_index]
+                        self.next_index += 1
+                        self.written_count += 1
+            else:
+                async with aiofiles.open(self.output_path, 'a', encoding='utf-8') as f:
+                    while self.next_index in self.buffer:
+                        text_to_write = self.buffer[self.next_index]
 
-                    await f.write(f"\n\n")
-                    await f.write(text_to_write)
-                    await f.write(f"\n\n")
+                        await f.write(f"\n\n")
+                        await f.write(text_to_write)
+                        await f.write(f"\n\n")
 
-                    # 清理内存
-                    del self.buffer[self.next_index]
-                    self.next_index += 1
-                    self.written_count += 1
+                        # 清理内存
+                        del self.buffer[self.next_index]
+                        self.next_index += 1
+                        self.written_count += 1
 
     def _format_bilingual(self, original: str, translation: str) -> str:
         """

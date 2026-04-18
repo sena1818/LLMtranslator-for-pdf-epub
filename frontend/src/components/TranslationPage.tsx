@@ -233,12 +233,25 @@ const TranslationPage: React.FC = () => {
             </div>
           </div>
           <div className="alert-actions">
-            <button className="btn-download-md" onClick={() => window.open(downloadResult(doneTask.task_id, 'md'), '_blank')}>
-              <DownloadIcon /> 下载 Markdown
+            <button className="btn-download-md" onClick={() => window.open(downloadResult(doneTask.task_id, 'md', 'mono'), '_blank')}>
+              <DownloadIcon /> 下载中文 Markdown
             </button>
             {doneTask.bilingual && (
-              <button className="btn-download-html" onClick={() => window.open(downloadResult(doneTask.task_id, 'html'), '_blank')}>
-                <DownloadIcon /> 下载双栏 HTML
+              <>
+                <button className="btn-download-md" onClick={() => window.open(downloadResult(doneTask.task_id, 'md', 'bilingual'), '_blank')}>
+                  <DownloadIcon /> 下载双语 Markdown
+                </button>
+                <button className="btn-download-md" onClick={() => window.open(downloadResult(doneTask.task_id, 'zip'), '_blank')}>
+                  <DownloadIcon /> 下载图片资源 ZIP
+                </button>
+                <button className="btn-download-html" onClick={() => window.open(downloadResult(doneTask.task_id, 'html', 'bilingual'), '_blank')}>
+                  <DownloadIcon /> 下载双栏 HTML
+                </button>
+              </>
+            )}
+            {!doneTask.bilingual && (
+              <button className="btn-download-md" onClick={() => window.open(downloadResult(doneTask.task_id, 'zip'), '_blank')}>
+                <DownloadIcon /> 下载图片资源 ZIP
               </button>
             )}
           </div>
@@ -418,17 +431,31 @@ const TranslationPage: React.FC = () => {
                         <>
                           <button
                             className="btn-dl-md"
-                            onClick={() => window.open(downloadResult(task.task_id, 'md'), '_blank')}
+                            onClick={() => window.open(downloadResult(task.task_id, 'md', 'mono'), '_blank')}
                           >
-                            <DownloadIcon /> MD
+                            <DownloadIcon /> 中文 MD
+                          </button>
+                          <button
+                            className="btn-dl-md"
+                            onClick={() => window.open(downloadResult(task.task_id, 'zip'), '_blank')}
+                          >
+                            <DownloadIcon /> 资源 ZIP
                           </button>
                           {task.bilingual && (
-                            <button
-                              className="btn-dl-html"
-                              onClick={() => window.open(downloadResult(task.task_id, 'html'), '_blank')}
-                            >
-                              <DownloadIcon /> HTML
-                            </button>
+                            <>
+                              <button
+                                className="btn-dl-md"
+                                onClick={() => window.open(downloadResult(task.task_id, 'md', 'bilingual'), '_blank')}
+                              >
+                                <DownloadIcon /> 双语 MD
+                              </button>
+                              <button
+                                className="btn-dl-html"
+                                onClick={() => window.open(downloadResult(task.task_id, 'html', 'bilingual'), '_blank')}
+                              >
+                                <DownloadIcon /> HTML
+                              </button>
+                            </>
                           )}
                         </>
                       )}

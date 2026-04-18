@@ -1,6 +1,6 @@
 import unittest
 
-from src.core.chunk_planner import TextChunk
+from src.domain.rules.chunk_planning import TextChunk
 from src.core.translator import DocumentProfile, TranslationEngine
 
 

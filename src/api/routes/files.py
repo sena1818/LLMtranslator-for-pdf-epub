@@ -8,9 +8,9 @@ import sys
 
 # 添加项目根目录到 Python 路径
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
-from src.services.export_service import ExportService
+from src.pipelines.postprocess.export_service import ExportService
 from ..database.db import Database
-from ..models.task import TaskStatus
+from ...domain.models.task_models import TaskStatus
 
 router = APIRouter(prefix="/api/files", tags=["files"])
 db = Database()

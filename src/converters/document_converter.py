@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional
 import logging
 
-from ..services.epub_artifact_cleaner import EpubArtifactCleaner
+from ..pipelines.preprocess.artifact_cleaner import EpubArtifactCleaner
 
 logger = logging.getLogger(__name__)
 

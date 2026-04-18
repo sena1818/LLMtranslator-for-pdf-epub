@@ -7,23 +7,36 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional, Tuple, List
 
-from ..models.task import TranslationTask, TaskStatus, TaskProgress
+from ...domain.models.task_models import TranslationTask, TaskStatus, TaskProgress
 from ..database.db import Database
 from .glossary_service import GlossaryService
 
 from ...converters.document_converter import DocumentConverter
-from ...services.export_service import ExportService
 from ...application.use_cases.run_translation_pipeline import RunTranslationPipeline
+from ...pipelines.postprocess.result_postprocess_pipeline import ResultPostprocessPipeline
+from ...infrastructure.persistence.task_repository import TaskRepository
+from ...core.translator import TranslationEngine
 
 
 class TranslationService:
     """翻译任务管理服务"""
 
     def __init__(self):
-        self.db = Database()
+        self.tasks = TaskRepository()
         self.converter = DocumentConverter()
         self.glossary_service = GlossaryService()
+        self.postprocess_pipeline = ResultPostprocessPipeline()
         self.active_tasks = {}  # 运行中的任务
+
+    @property
+    def db(self) -> Database:
+        """兼容旧调用：暴露底层 Database 实例。"""
+        return self.tasks.db
+
+    @db.setter
+    def db(self, value: Database):
+        """兼容测试/旧代码直接替换数据库实例。"""
+        self.tasks = TaskRepository(value)
 
     async def create_task(
         self,
@@ -56,17 +69,17 @@ class TranslationService:
         )
 
         # 保存到数据库
-        await self.db.save_task(task)
+        await self.tasks.save(task)
 
         return task
 
     async def claim_next_pending_task(self) -> Optional[TranslationTask]:
         """认领一个待处理任务"""
-        return await self.db.claim_next_pending_task()
+        return await self.tasks.claim_next_pending()
 
     async def requeue_stale_tasks(self, stale_after_seconds: int = 900) -> int:
         """重新排队长时间未更新的 processing 任务"""
-        return await self.db.requeue_stale_processing_tasks(stale_after_seconds)
+        return await self.tasks.requeue_stale_processing(stale_after_seconds)
 
     async def start_translation(self, task_id: str, already_claimed: bool = False):
         """
@@ -75,7 +88,7 @@ class TranslationService:
         import logging
         logger = logging.getLogger(__name__)
         
-        task = await self.db.get_task(task_id)
+        task = await self.tasks.get(task_id)
         if not task:
             logger.error(f"任务不存在: {task_id}")
             return
@@ -87,7 +100,7 @@ class TranslationService:
                 # 兼容直接调用场景
                 task.status = TaskStatus.PROCESSING
                 task.updated_at = datetime.now()
-                await self.db.update_task(task)
+                await self.tasks.update(task)
 
             # 1. 获取文件路径
             file_path = Path(f"data/uploads/{task_id}_{task.filename}")
@@ -103,7 +116,7 @@ class TranslationService:
                         logger.info(f"♻️ 复用已转换 Markdown: {markdown_file}")
                     else:
                         task.updated_at = datetime.now()
-                        await self.db.update_task(task)
+                        await self.tasks.update(task)
                         markdown_file = self.converter.convert(file_path, temp_dir)
                         logger.info(f"✅ 文档转换成功: {markdown_file}")
                 except Exception as e:
@@ -120,7 +133,7 @@ class TranslationService:
                 raise RuntimeError(f"Markdown 文件不存在: {markdown_file}")
 
             task.updated_at = datetime.now()
-            await self.db.update_task(task)
+            await self.tasks.update(task)
 
             with open(markdown_file, 'r', encoding='utf-8') as f:
                 text = f.read()
@@ -134,7 +147,10 @@ class TranslationService:
                     glossary = glossary_data.get("terms", {})
 
             # 5. 初始化翻译引擎
-            translation_use_case = RunTranslationPipeline(glossary=glossary)
+            translation_use_case = RunTranslationPipeline(
+                glossary=glossary,
+                engine_cls=TranslationEngine,
+            )
 
             # 6. 文本分块
             chunks = translation_use_case.plan_chunks(text)
@@ -143,7 +159,7 @@ class TranslationService:
             task.progress.percentage = 0.0
             task.progress.speed = 0.0
             task.progress.elapsed = 0.0
-            await self.db.update_task(task)
+            await self.tasks.update(task)
             logger.info(f"✂️ 文本已分块: {len(chunks)} chunks")
 
             # 7. 准备输出路径
@@ -177,7 +193,7 @@ class TranslationService:
                         logger.error(f"❌ Chunk 翻译失败: {event.get('error')}")
 
                     # 更新数据库
-                    await self.db.update_task(task)
+                    await self.tasks.update(task)
 
             # 9. 执行翻译 (支持双语对照模式)
             logger.info("🎬 开始调用 LLM 进行翻译...")
@@ -212,15 +228,14 @@ class TranslationService:
                     temp_dir / "images",
                     temp_dir / "images" / "images",
                 ])
-            copied_assets = []
-            for markdown_path in [mono_output_path, bilingual_output_path if task.bilingual else None]:
-                if markdown_path is None or not markdown_path.exists():
-                    continue
-                copied_assets = ExportService.sync_result_assets(
-                    markdown_path=markdown_path,
-                    asset_sources=asset_sources,
-                    task_id=task_id,
-                ) or copied_assets
+            copied_assets = self.postprocess_pipeline.sync_assets(
+                markdown_paths=[
+                    mono_output_path,
+                    bilingual_output_path if task.bilingual else None,
+                ],
+                asset_sources=asset_sources,
+                task_id=task_id,
+            )
 
             if copied_assets:
                 logger.info("🖼️ 已同步 %s 张图片到结果目录", len(copied_assets))
@@ -250,7 +265,7 @@ class TranslationService:
                 )
 
             task.updated_at = datetime.now()
-            await self.db.update_task(task)
+            await self.tasks.update(task)
             logger.info(
                 f"✅ 翻译任务结束: status={task.status.value}, "
                 f"成功 {success_count} / 失败 {failed_count}, "
@@ -264,7 +279,7 @@ class TranslationService:
             task.status = TaskStatus.FAILED
             task.error = str(e)
             task.updated_at = datetime.now()
-            await self.db.update_task(task)
+            await self.tasks.update(task)
 
     def _find_reusable_markdown(self, file_path: Path, temp_dir: Path) -> Optional[Path]:
         """查找可复用的转换结果，避免中断后重复转换"""
@@ -320,17 +335,17 @@ class TranslationService:
 
     async def get_task(self, task_id: str) -> Optional[TranslationTask]:
         """获取任务"""
-        return await self.db.get_task(task_id)
+        return await self.tasks.get(task_id)
 
     async def list_tasks(self, skip: int = 0, limit: int = 20) -> Tuple[List[TranslationTask], int]:
         """获取任务列表"""
-        return await self.db.list_tasks(skip, limit)
+        return await self.tasks.list(skip, limit)
 
     async def delete_task(self, task_id: str) -> bool:
         """删除任务及其所有相关文件"""
         import shutil
 
-        task = await self.db.get_task(task_id)
+        task = await self.tasks.get(task_id)
         if not task or task.status == TaskStatus.PROCESSING:
             return False
 
@@ -368,4 +383,4 @@ class TranslationService:
             shutil.rmtree(temp_dir)
 
         # 从数据库删除
-        return await self.db.delete_task(task_id)
+        return await self.tasks.delete(task_id)

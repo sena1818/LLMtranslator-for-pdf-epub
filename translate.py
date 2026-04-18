@@ -20,8 +20,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from src.converters.document_converter import DocumentConverter
 from src.utils.config_loader import get_config
-from src.services.markdown_formatter import SmartMarkdownFormatter
 from src.application.use_cases.run_translation_pipeline import RunTranslationPipeline
+from src.pipelines.postprocess.result_postprocess_pipeline import ResultPostprocessPipeline
 
 # 配置日志
 logging.basicConfig(
@@ -48,8 +48,9 @@ class TranslationPipeline:
         """
         self.config = get_config(config_path)
         self.converter = DocumentConverter()
+        self.postprocess_pipeline = ResultPostprocessPipeline()
 
-    async def post_process_formatting(self, output_file: Path):
+    async def post_process_formatting(self, output_file: Path, source_type: str = "epub"):
         """
         翻译后智能格式化处理
 
@@ -63,20 +64,12 @@ class TranslationPipeline:
         Args:
             output_file: 输出文件路径
         """
-        logger.info("📝 读取翻译结果...")
-        with open(output_file, 'r', encoding='utf-8') as f:
-            content = f.read()
-
         logger.info("🔧 应用智能格式化...")
-        formatter = SmartMarkdownFormatter()
-        formatted_content = formatter.format(content)
+        stats = self.postprocess_pipeline.format_markdown_file(
+            output_file,
+            source_type=source_type,
+        )
 
-        logger.info("💾 保存格式化结果...")
-        with open(output_file, 'w', encoding='utf-8') as f:
-            f.write(formatted_content)
-
-        # 打印统计信息
-        stats = formatter.stats
         logger.info("🎨 格式化完成:")
         logger.info(f"  ✅ 标题标准化: {stats['headers_normalized']}")
         logger.info(f"  ✅ 引用块转换: {stats['quotes_converted']}")
@@ -136,6 +129,7 @@ class TranslationPipeline:
         if skip_conversion or input_file.suffix.lower() in ['.md', '.markdown']:
             markdown_file = input_file
             logger.info(f"📄 使用 Markdown 文件: {markdown_file}")
+            source_type = "markdown"
         else:
             logger.info(f"📄 输入文件: {input_file}")
             logger.info(f"🔄 开始格式转换...")
@@ -146,6 +140,7 @@ class TranslationPipeline:
             if markdown_file is None:
                 logger.error("❌ 格式转换失败")
                 return
+            source_type = input_file.suffix.lower().lstrip(".")
 
         # 步骤 2: 读取文件
         logger.info(f"📖 读取文件: {markdown_file}")
@@ -218,11 +213,26 @@ class TranslationPipeline:
         )
         results = pipeline_output.results
 
+        asset_sources = []
+        if not skip_conversion and input_file.suffix.lower() in ['.pdf', '.epub', '.mobi']:
+            asset_sources = [
+                temp_dir,
+                temp_dir / "images",
+                temp_dir / "images" / "images",
+            ]
+        copied_assets = self.postprocess_pipeline.sync_assets(
+            markdown_paths=[output_file],
+            asset_sources=asset_sources,
+            task_id=output_file.stem,
+        )
+        if copied_assets:
+            logger.info(f"🖼️ 已同步 {len(copied_assets)} 张图片到结果目录")
+
         # 步骤 9: 智能格式化清理
         if not skip_formatting:
             logger.info("="*60)
             logger.info("🎨 开始格式化处理...")
-            await self.post_process_formatting(output_file)
+            await self.post_process_formatting(output_file, source_type=source_type)
 
         # 步骤 10: 总结
         elapsed = asyncio.get_event_loop().time() - start_time

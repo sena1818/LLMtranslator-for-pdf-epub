@@ -4,7 +4,7 @@
  */
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -108,10 +108,15 @@ export const deleteTask = async (taskId: string): Promise<void> => {
 /**
  * 下载翻译结果
  * @param taskId 任务ID
- * @param format 导出格式: 'md' 或 'html'
+ * @param format 导出格式: 'md' | 'html' | 'zip'
+ * @param variant 结果类型: 'mono' | 'bilingual'
  */
-export const downloadResult = (taskId: string, format: 'md' | 'html' = 'md'): string => {
-  return `${API_BASE_URL}/api/files/results/${taskId}?format=${format}`;
+export const downloadResult = (
+  taskId: string,
+  format: 'md' | 'html' | 'zip' = 'md',
+  variant: 'mono' | 'bilingual' = 'mono'
+): string => {
+  return `${API_BASE_URL}/api/files/results/${taskId}?format=${format}&variant=${variant}`;
 };
 
 // ============== 术语表 API ==============

@@ -3,8 +3,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.core.chunk_planner import TextChunk
-from src.core.translation_cache import TranslationCache
+from src.domain.rules.chunk_planning import TextChunk
+from src.infrastructure.cache.translation_cache import TranslationCache
 from src.core.translator import TranslationEngine, TranslationResult
 
 

@@ -3,10 +3,19 @@
 从 YAML 文件加载配置,并支持环境变量覆盖
 """
 import os
-import yaml
 from pathlib import Path
 from typing import Dict, Any
-from dotenv import load_dotenv
+
+try:
+    import yaml
+except ImportError:  # pragma: no cover - 依赖缺失时退化为默认配置
+    yaml = None
+
+try:
+    from dotenv import load_dotenv
+except ImportError:  # pragma: no cover - 依赖缺失时忽略 .env 自动加载
+    def load_dotenv(*args, **kwargs):
+        return False
 
 
 class Config:
@@ -29,8 +38,11 @@ class Config:
         if config_path is None:
             config_path = self.root_dir / "config" / "config.yaml"
 
-        with open(config_path, 'r', encoding='utf-8') as f:
-            self.config = yaml.safe_load(f)
+        if yaml is None:
+            self.config = {}
+        else:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                self.config = yaml.safe_load(f)
 
     def get(self, key_path: str, default: Any = None) -> Any:
         """
