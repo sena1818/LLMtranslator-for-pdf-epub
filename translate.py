@@ -116,7 +116,8 @@ class TranslationPipeline:
         glossary_path: Path = None,
         skip_conversion: bool = False,
         skip_formatting: bool = False,
-        bilingual: bool = False
+        bilingual: bool = False,
+        domain: str = None
     ):
         """
         运行完整翻译流程
@@ -128,6 +129,7 @@ class TranslationPipeline:
             skip_conversion: 跳过格式转换(直接翻译 Markdown)
             skip_formatting: 跳过格式化后处理(保留原始翻译结果)
             bilingual: 双语对照模式(原文+译文交替输出)
+            domain: 翻译体裁(philosophy/literary/general)，缺省读配置
         """
         logger.info("="*60)
         logger.info("🚀 翻译流水线启动")
@@ -158,7 +160,8 @@ class TranslationPipeline:
 
         # 步骤 4: 初始化翻译引擎
         logger.info("⚙️ 初始化翻译引擎...")
-        engine = TranslationEngine(glossary=glossary)
+        engine = TranslationEngine(glossary=glossary, domain=domain)
+        logger.info(f"🎚️ 翻译体裁: {engine.domain}")
 
         # 步骤 5: 文本分块
         chunks = engine.plan_chunks(text)
@@ -276,6 +279,13 @@ def main():
     )
 
     parser.add_argument(
+        '--domain',
+        type=str,
+        default=None,
+        help='翻译体裁: philosophy/literary/general (默认读配置 translation.domain)'
+    )
+
+    parser.add_argument(
         '-c', '--config',
         type=Path,
         help='配置文件路径 (默认: config/config.yaml)'
@@ -297,7 +307,8 @@ def main():
         glossary_path=args.glossary,
         skip_conversion=args.skip_conversion,
         skip_formatting=args.skip_formatting,
-        bilingual=args.bilingual
+        bilingual=args.bilingual,
+        domain=args.domain
     ))
 
 

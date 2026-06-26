@@ -91,6 +91,16 @@ class Config:
         return self.get("api.model")
 
     @property
+    def domain(self) -> str:
+        """翻译体裁（决定使用哪套 Prompt 模板）"""
+        return self.get("translation.domain", "philosophy")
+
+    @property
+    def prompts_dir(self) -> Path:
+        """Prompt 模板目录"""
+        return self.root_dir / self.get("paths.prompts", "prompts")
+
+    @property
     def translator_temperature(self) -> float:
         """获取翻译温度"""
         return self.get("api.translator.temperature", 0.3)

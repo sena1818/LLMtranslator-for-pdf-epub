@@ -16,6 +16,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
 from ..utils.config_loader import get_config
+from ..utils.prompt_library import PromptLibrary
 from .chunk_planner import ChunkPlanner, TextChunk
 from .rate_limiter import RateLimiter
 from .translation_cache import TranslationCache
@@ -29,15 +30,20 @@ logger = logging.getLogger(__name__)
 class TranslationEngine:
     """异步翻译引擎"""
 
-    def __init__(self, glossary: Dict[str, str] = None):
+    def __init__(self, glossary: Dict[str, str] = None, domain: str = None):
         """
         初始化翻译引擎
 
         Args:
             glossary: 术语表字典
+            domain: 翻译体裁（决定加载哪套 Prompt 模板），缺省读配置
         """
         self.config = get_config()
         self.glossary = glossary or {}
+        self.domain = domain or self.config.domain
+        self.prompt_library = PromptLibrary(
+            self.config.prompts_dir, default_domain="philosophy"
+        )
 
         # 初始化 LLM
         self.llm_translator = ChatOpenAI(
@@ -168,35 +174,7 @@ class TranslationEngine:
         Returns:
             Prompt 模板
         """
-        profile = document_profile or DocumentProfile.empty()
-        template = """你是专业的后现代哲学翻译家,正在翻译学术文本。
-
-【文档分析员备忘】:
-{document_profile}
-
-【核心术语表】(必须严格遵守):
-{glossary}
-
-【当前章节】:
-{section_title}
-
-【上文语境】:
-{context}
-
-【待翻译文本】:
-{text}
-
----
-【翻译要求】:
-1. 完整保留所有 Markdown 格式（标题、加粗、图片、链接、代码块）
-2. 风格：学术、精确、保持理论张力
-3. 专有名词首次出现时保留英文原文在括号内
-4. 严格使用术语表中的译名
-5. 直接输出译文，不要任何前言、解释、注释
-
-开始翻译:
-"""
-
+        template = self.prompt_library.translator_template(self.domain)
         return ChatPromptTemplate.from_template(template)
 
     async def analyze_document(
@@ -293,6 +271,7 @@ class TranslationEngine:
         payload = "|".join(
             [
                 self.prompt_version,
+                getattr(self, "domain", "") or "",
                 self.config.model_name or "",
                 chunk.chunk_id,
                 self.document_profile.fingerprint,

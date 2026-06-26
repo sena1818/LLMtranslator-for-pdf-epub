@@ -1,5 +1,10 @@
 # 翻译系统配置文件
 
+# 翻译体裁：决定使用 prompts/{domain}.md 中的哪套翻译 Prompt
+# 可选: philosophy(默认) / literary / general，或自建模板
+translation:
+  domain: "philosophy"
+
 # API 配置
 api:
   provider: "siliconflow"  # siliconflow, openai, google
@@ -37,6 +42,7 @@ paths:
   temp: "data/temp"
   glossaries: "data/glossaries"
   logs: "logs"
+  prompts: "prompts"
   artifact_rules: "config/artifact_rules.yaml"
 
 # 日志配置
