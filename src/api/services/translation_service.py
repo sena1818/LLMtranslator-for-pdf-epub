@@ -12,8 +12,8 @@ from ..database.db import Database
 from .glossary_service import GlossaryService
 
 from ...converters.document_converter import DocumentConverter
-from ...services.export_service import ExportService
 from ...services.result_renderer import write_results_markdown
+from ...pipelines.postprocess.result_postprocess_pipeline import ResultPostprocessPipeline
 from ...core.translator import TranslationEngine
 
 
@@ -198,6 +198,29 @@ class TranslationService:
             if task.bilingual:
                 write_results_markdown(bilingual_output_path, task.filename, results, bilingual=True)
 
+            result_paths = [mono_output_path]
+            if task.bilingual:
+                result_paths.append(bilingual_output_path)
+
+            # 与 CLI 对齐：对结果文件做智能格式化，清理 Pandoc/EPUB 残留。
+            # 此前 Web 路径从不格式化，导致下载结果与 CLI 产物质量不一致。
+            # formatter 是同步重正则，卸到线程避免阻塞事件循环。
+            source_type = "mobi" if file_path.suffix.lower() == ".mobi" else "epub"
+            for markdown_path in result_paths:
+                stats = await asyncio.to_thread(
+                    ResultPostprocessPipeline().format_markdown_file,
+                    markdown_path,
+                    source_type,
+                )
+                logger.info(
+                    "🎨 已格式化 %s（标题 %s / 引用 %s / 图片 %s）",
+                    markdown_path.name,
+                    stats.get("headers_normalized", 0),
+                    stats.get("quotes_converted", 0),
+                    stats.get("images_fixed", 0),
+                )
+
+            # 同步图片资源到结果目录（统一走后处理流水线）
             asset_sources = []
             if temp_dir.exists():
                 asset_sources.extend([
@@ -205,16 +228,11 @@ class TranslationService:
                     temp_dir / "images",
                     temp_dir / "images" / "images",
                 ])
-            copied_assets = []
-            for markdown_path in [mono_output_path, bilingual_output_path if task.bilingual else None]:
-                if markdown_path is None or not markdown_path.exists():
-                    continue
-                copied_assets = ExportService.sync_result_assets(
-                    markdown_path=markdown_path,
-                    asset_sources=asset_sources,
-                    task_id=task_id,
-                ) or copied_assets
-
+            copied_assets = ResultPostprocessPipeline().sync_assets(
+                markdown_paths=result_paths,
+                asset_sources=asset_sources,
+                task_id=task_id,
+            )
             if copied_assets:
                 logger.info("🖼️ 已同步 %s 张图片到结果目录", len(copied_assets))
 
