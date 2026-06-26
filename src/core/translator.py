@@ -18,7 +18,6 @@ from langchain_core.output_parsers import StrOutputParser
 from ..utils.config_loader import get_config
 from .chunk_planner import ChunkPlanner, TextChunk
 from .rate_limiter import RateLimiter
-from .output_manager import OutputManager
 from .translation_cache import TranslationCache
 from .validator import QualityReport, TranslationValidator
 from ..domain.models.translation_models import DocumentProfile, TranslationResult
@@ -499,30 +498,28 @@ class TranslationEngine:
     async def translate_batch(
         self,
         text: str,
-        output_path: Path,
         progress_callback: Optional[Callable] = None,
-        bilingual: bool = False,
         prepared_chunks: Optional[List[TextChunk]] = None,
     ) -> List[TranslationResult]:
         """
         批量翻译完整文本
 
+        引擎只负责产出 TranslationResult 列表；最终如何落盘（单语/双语、
+        是否格式化）由调用方使用 result_renderer 统一渲染，避免两套写文件
+        逻辑互相覆盖。
+
         Args:
             text: 完整文本
-            output_path: 输出文件路径
             progress_callback: 进度回调
-            bilingual: 是否启用双语对照模式
+            prepared_chunks: 预先规划好的 chunk（可选）
 
         Returns:
-            翻译结果列表
+            翻译结果列表（按 chunk_index 排序）
         """
         # 1. 文本分块
         chunks = prepared_chunks or self.plan_chunks(text)
         total = len(chunks)
-        if hasattr(self, "analyze_document"):
-            self.document_profile = await self.analyze_document(text, chunks)
-        else:
-            self.document_profile = DocumentProfile.empty()
+        self.document_profile = await self.analyze_document(text, chunks)
         await self.cache.initialize()
 
         if progress_callback:
@@ -531,10 +528,7 @@ class TranslationEngine:
                 "total_chunks": total
             })
 
-        # 2. 创建输出管理器
-        output_manager = OutputManager(str(output_path), bilingual=bilingual)
-
-        # 3. 准备任务列表
+        # 2. 准备任务列表（命中缓存的直接复用，未命中的并发翻译）
         tasks = []
         results: List[TranslationResult] = []
         for chunk in chunks:
@@ -552,12 +546,6 @@ class TranslationEngine:
                     repaired=cache_entry.repaired,
                     cached=True,
                 )
-                await output_manager.add_result(
-                    index=cached_result.chunk_index,
-                    content=cached_result.translation,
-                    success=True,
-                    original_text=chunk.text,
-                )
                 if progress_callback:
                     await progress_callback({
                         "chunk_index": chunk.index,
@@ -572,13 +560,9 @@ class TranslationEngine:
                 results.append(cached_result)
                 continue
 
-            tasks.append(
-                self._process_one_chunk(
-                    chunk, output_manager, progress_callback
-                )
-            )
+            tasks.append(self._process_one_chunk(chunk, progress_callback))
 
-        # 4. 并发执行
+        # 3. 并发执行
         live_results = await asyncio.gather(*tasks)
         results.extend(live_results)
 
@@ -587,19 +571,8 @@ class TranslationEngine:
     async def _process_one_chunk(
         self,
         chunk: TextChunk,
-        output_manager: OutputManager,
         callback: Optional[Callable]
     ) -> TranslationResult:
         """单块处理(信号量控制)"""
         async with self.semaphore:
-            result = await self.translate_chunk(chunk, callback)
-
-            # 写入输出管理器
-            await output_manager.add_result(
-                index=result.chunk_index,
-                content=result.translation,
-                success=result.success,
-                original_text=result.original
-            )
-
-            return result
+            return await self.translate_chunk(chunk, callback)

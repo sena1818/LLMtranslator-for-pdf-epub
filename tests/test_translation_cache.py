@@ -65,22 +65,15 @@ class TranslationCacheTestCase(unittest.TestCase):
 
                 live_calls = []
 
-                async def fake_process(chunk, output_manager, callback):
+                async def fake_process(chunk, callback):
                     live_calls.append(chunk.chunk_id)
-                    result = TranslationResult(
+                    return TranslationResult(
                         chunk_index=chunk.index,
                         original=chunk.text,
                         translation="实时翻译",
                         success=True,
                         chunk_id=chunk.chunk_id,
                     )
-                    await output_manager.add_result(
-                        index=result.chunk_index,
-                        content=result.translation,
-                        success=True,
-                        original_text=chunk.text,
-                    )
-                    return result
 
                 engine._process_one_chunk = fake_process
 
@@ -92,12 +85,9 @@ class TranslationCacheTestCase(unittest.TestCase):
                     repaired=False,
                 )
 
-                output_path = Path(temp_dir) / "out.md"
-                output_path.write_text("", encoding="utf-8")
                 results = await TranslationEngine.translate_batch(
                     engine,
                     text="dummy",
-                    output_path=output_path,
                     prepared_chunks=chunks,
                 )
                 return results, live_calls

@@ -13,6 +13,7 @@ from .glossary_service import GlossaryService
 
 from ...converters.document_converter import DocumentConverter
 from ...services.export_service import ExportService
+from ...services.result_renderer import write_results_markdown
 from ...core.translator import TranslationEngine
 
 
@@ -159,9 +160,6 @@ class TranslationService:
             result_dir.mkdir(parents=True, exist_ok=True)
             mono_output_path = result_dir / f"{task_id}.md"
             bilingual_output_path = result_dir / f"{task_id}.bilingual.md"
-            engine_output_path = bilingual_output_path if task.bilingual else mono_output_path
-
-            self._initialize_output_file(engine_output_path, task.filename, task.bilingual)
 
             # 8. 定义进度回调
             start_time = asyncio.get_event_loop().time()
@@ -187,30 +185,18 @@ class TranslationService:
                     # 更新数据库
                     await self.db.update_task(task)
 
-            # 9. 执行翻译 (支持双语对照模式)
+            # 9. 执行翻译（引擎只产出结果对象，落盘交给统一渲染器）
             logger.info("🎬 开始调用 LLM 进行翻译...")
             results = await engine.translate_batch(
                 text=text,
-                output_path=engine_output_path,
                 progress_callback=progress_callback,
-                bilingual=task.bilingual,
                 prepared_chunks=chunks,
             )
 
-            self._write_result_markdown(
-                output_path=mono_output_path,
-                filename=task.filename,
-                results=results,
-                bilingual=False,
-            )
-
+            # 单语结果始终产出；双语任务额外产出对照版本
+            write_results_markdown(mono_output_path, task.filename, results, bilingual=False)
             if task.bilingual:
-                self._write_result_markdown(
-                    output_path=bilingual_output_path,
-                    filename=task.filename,
-                    results=results,
-                    bilingual=True,
-                )
+                write_results_markdown(bilingual_output_path, task.filename, results, bilingual=True)
 
             asset_sources = []
             if temp_dir.exists():
@@ -287,43 +273,6 @@ class TranslationService:
             if candidate.is_file() and candidate.stat().st_size > 0
         )
         return md_files[0] if md_files else None
-
-    def _initialize_output_file(self, output_path: Path, filename: str, bilingual: bool) -> None:
-        """初始化结果文件头"""
-        with open(output_path, 'w', encoding='utf-8') as f:
-            mode_text = "（双语对照）" if bilingual else ""
-            f.write(f"# {filename} - 中文翻译{mode_text}\n\n")
-            f.write("> 由 AI 自动翻译\n\n")
-
-    def _write_result_markdown(
-        self,
-        output_path: Path,
-        filename: str,
-        results: List,
-        bilingual: bool,
-    ) -> None:
-        """根据翻译结果渲染最终 Markdown，统一单语/双语产物格式。"""
-        self._initialize_output_file(output_path, filename, bilingual)
-
-        with open(output_path, 'a', encoding='utf-8') as f:
-            for result in sorted(results, key=lambda item: item.chunk_index):
-                if result.success:
-                    if bilingual:
-                        original_lines = result.original.strip().split('\n')
-                        quoted_original = '\n'.join(f'> {line}' for line in original_lines)
-                        content = f"{quoted_original}\n\n{result.translation}\n\n---"
-                    else:
-                        content = result.translation
-                else:
-                    content = (
-                        f"\n\n> **[翻译失败 - Chunk {result.chunk_index}]**\n"
-                        f"> *API 请求失败或超时,请根据以下原文手动补全:*\n\n"
-                        f"```text\n{result.original[:500]}...\n```\n\n"
-                    )
-
-                f.write("\n\n")
-                f.write(content)
-                f.write("\n\n")
 
     async def get_task(self, task_id: str) -> Optional[TranslationTask]:
         """获取任务"""

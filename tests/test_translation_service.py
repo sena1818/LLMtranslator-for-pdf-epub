@@ -46,7 +46,7 @@ class FakeEngine:
     def split_text(self, text):
         return ["chunk-0", "chunk-1"]
 
-    async def translate_batch(self, text, output_path, progress_callback=None, bilingual=False, prepared_chunks=None):
+    async def translate_batch(self, text, progress_callback=None, prepared_chunks=None):
         if progress_callback:
             await progress_callback({"chunk_index": 0, "status": "completed", "translation": "译文 1"})
             await progress_callback({"chunk_index": 1, "status": "failed", "error": "mock failure"})

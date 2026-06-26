@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from src.converters.document_converter import DocumentConverter
 from src.utils.config_loader import get_config
 from src.services.markdown_formatter import SmartMarkdownFormatter
+from src.services.result_renderer import write_results_markdown
 from src.core.translator import TranslationEngine
 
 # 配置日志
@@ -169,12 +170,6 @@ class TranslationPipeline:
 
         output_file.parent.mkdir(parents=True, exist_ok=True)
 
-        # 初始化输出文件
-        with open(output_file, 'w', encoding='utf-8') as f:
-            f.write(f"# {input_file.stem} - 中文翻译\n\n")
-            f.write(f"> 由 AI 自动翻译\n")
-            f.write(f"> 源文件: {input_file.name}\n\n")
-
         # 步骤 7: 进度回调
         completed = 0
         failed = 0
@@ -211,11 +206,12 @@ class TranslationPipeline:
 
         results = await engine.translate_batch(
             text=text,
-            output_path=output_file,
             progress_callback=progress_callback,
-            bilingual=bilingual,
             prepared_chunks=chunks,
         )
+
+        # 步骤 8.5: 用统一渲染器从结果落盘（与 Web 端同源）
+        write_results_markdown(output_file, input_file.stem, results, bilingual=bilingual)
 
         # 步骤 9: 智能格式化清理
         if not skip_formatting:
