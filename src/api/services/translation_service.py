@@ -104,7 +104,11 @@ class TranslationService:
                     else:
                         task.updated_at = datetime.now()
                         await self.db.update_task(task)
-                        markdown_file = self.converter.convert(file_path, temp_dir)
+                        # convert 内部是同步 subprocess(pandoc/marker)，必须卸到线程，
+                        # 否则会阻塞整个 worker 事件循环（进度更新/轮询/其它任务全部卡死）
+                        markdown_file = await asyncio.to_thread(
+                            self.converter.convert, file_path, temp_dir
+                        )
                         logger.info(f"✅ 文档转换成功: {markdown_file}")
                 except Exception as e:
                     logger.error(f"❌ 文档转换失败: {str(e)}")
@@ -122,8 +126,9 @@ class TranslationService:
             task.updated_at = datetime.now()
             await self.db.update_task(task)
 
-            with open(markdown_file, 'r', encoding='utf-8') as f:
-                text = f.read()
+            text = await asyncio.to_thread(
+                markdown_file.read_text, encoding='utf-8'
+            )
 
             # 4. 加载术语表
             glossary = {}
