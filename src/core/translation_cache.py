@@ -7,12 +7,25 @@
 from __future__ import annotations
 
 import json
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 import aiosqlite
+
+
+# 与任务库一致：缓存库同样可能被多进程并发读写，开启 WAL + busy_timeout。
+@asynccontextmanager
+async def _connect(db_path):
+    db = await aiosqlite.connect(db_path)
+    try:
+        await db.execute("PRAGMA journal_mode=WAL")
+        await db.execute("PRAGMA busy_timeout=5000")
+        yield db
+    finally:
+        await db.close()
 
 
 @dataclass
@@ -39,7 +52,7 @@ class TranslationCache:
         if self._initialized:
             return
 
-        async with aiosqlite.connect(self.db_path) as db:
+        async with _connect(self.db_path) as db:
             await db.execute(
                 """
                 CREATE TABLE IF NOT EXISTS translation_cache (
@@ -60,7 +73,7 @@ class TranslationCache:
         """读取缓存"""
         await self.initialize()
 
-        async with aiosqlite.connect(self.db_path) as db:
+        async with _connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM translation_cache WHERE cache_key = ?",
@@ -90,7 +103,7 @@ class TranslationCache:
         """写入缓存"""
         await self.initialize()
 
-        async with aiosqlite.connect(self.db_path) as db:
+        async with _connect(self.db_path) as db:
             await db.execute(
                 """
                 INSERT OR REPLACE INTO translation_cache (

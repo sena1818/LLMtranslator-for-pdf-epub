@@ -2,11 +2,25 @@
 SQLite 数据库管理
 """
 import aiosqlite
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional, List, Tuple
 from datetime import datetime, timedelta
 
 from ..models.task import TranslationTask, TaskStatus, TaskProgress
+
+
+# 多进程 worker + 高频进度写入场景下，必须开启 WAL 并设置 busy_timeout，
+# 否则并发写会直接抛 "database is locked"。
+@asynccontextmanager
+async def _connect(db_path):
+    db = await aiosqlite.connect(db_path)
+    try:
+        await db.execute("PRAGMA journal_mode=WAL")
+        await db.execute("PRAGMA busy_timeout=5000")
+        yield db
+    finally:
+        await db.close()
 
 
 class Database:
@@ -18,7 +32,7 @@ class Database:
 
     async def initialize(self):
         """初始化数据库表"""
-        async with aiosqlite.connect(self.db_path) as db:
+        async with _connect(self.db_path) as db:
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS tasks (
                     task_id TEXT PRIMARY KEY,
@@ -57,7 +71,7 @@ class Database:
 
     async def save_task(self, task: TranslationTask):
         """保存任务"""
-        async with aiosqlite.connect(self.db_path) as db:
+        async with _connect(self.db_path) as db:
             await db.execute("""
                 INSERT INTO tasks (
                     task_id,
@@ -96,7 +110,7 @@ class Database:
     async def update_task(self, task: TranslationTask):
         """更新任务"""
         task.updated_at = datetime.now()
-        async with aiosqlite.connect(self.db_path) as db:
+        async with _connect(self.db_path) as db:
             await db.execute("""
                 UPDATE tasks SET
                     status = ?,
@@ -127,7 +141,7 @@ class Database:
 
     async def get_task(self, task_id: str) -> Optional[TranslationTask]:
         """获取任务"""
-        async with aiosqlite.connect(self.db_path) as db:
+        async with _connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM tasks WHERE task_id = ?", (task_id,)
@@ -141,7 +155,7 @@ class Database:
 
     async def list_tasks(self, skip: int = 0, limit: int = 20) -> Tuple[List[TranslationTask], int]:
         """获取任务列表"""
-        async with aiosqlite.connect(self.db_path) as db:
+        async with _connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
 
             # 总数
@@ -160,7 +174,7 @@ class Database:
 
     async def delete_task(self, task_id: str) -> bool:
         """删除任务"""
-        async with aiosqlite.connect(self.db_path) as db:
+        async with _connect(self.db_path) as db:
             cursor = await db.execute(
                 "DELETE FROM tasks WHERE task_id = ?", (task_id,)
             )
@@ -169,7 +183,7 @@ class Database:
 
     async def claim_next_pending_task(self) -> Optional[TranslationTask]:
         """原子认领下一个待处理任务"""
-        async with aiosqlite.connect(self.db_path) as db:
+        async with _connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             await db.execute("BEGIN IMMEDIATE")
 
@@ -220,7 +234,7 @@ class Database:
     async def requeue_stale_processing_tasks(self, stale_after_seconds: int = 900) -> int:
         """将长时间未更新的 processing 任务重新放回队列"""
         stale_before = (datetime.now() - timedelta(seconds=stale_after_seconds)).isoformat()
-        async with aiosqlite.connect(self.db_path) as db:
+        async with _connect(self.db_path) as db:
             cursor = await db.execute(
                 """
                 UPDATE tasks
