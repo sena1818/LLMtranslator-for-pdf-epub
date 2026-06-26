@@ -35,6 +35,9 @@ class TranslationService:
         """创建翻译任务"""
         task_id = str(uuid.uuid4())
 
+        # 防止路径穿越：仅保留文件名本身，丢弃任何目录分量（如 ../../etc/x）
+        filename = Path(filename).name or "upload"
+
         # 保存上传文件
         upload_dir = Path("data/uploads")
         upload_dir.mkdir(parents=True, exist_ok=True)

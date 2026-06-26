@@ -33,10 +33,13 @@ app = FastAPI(
 )
 
 # CORS 配置 (允许前端调用)
+# 注意: allow_origins=["*"] 与 allow_credentials=True 是非法组合，
+# 浏览器会直接忽略带凭证的请求。本服务不依赖 cookie/凭证，
+# 故关闭 credentials，保留通配来源以支持 ngrok 隧道分享。
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 允许所有来源（包括 ngrok 隧道）
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
