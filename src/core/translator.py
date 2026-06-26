@@ -245,12 +245,15 @@ class TranslationEngine:
         chain = analyst_prompt | self.llm_analyst | StrOutputParser()
 
         try:
-            raw = await chain.ainvoke(
-                {
-                    "max_term_hints": getattr(self.config, "analyst_max_term_hints", 12),
-                    "sections": "\n".join(f"- {item}" for item in unique_sections) or "- Document Root",
-                    "excerpt": excerpt,
-                }
+            raw = await asyncio.wait_for(
+                chain.ainvoke(
+                    {
+                        "max_term_hints": getattr(self.config, "analyst_max_term_hints", 12),
+                        "sections": "\n".join(f"- {item}" for item in unique_sections) or "- Document Root",
+                        "excerpt": excerpt,
+                    }
+                ),
+                timeout=self.config.request_timeout,
             )
             return self._parse_document_profile(raw)
         except Exception as exc:
@@ -326,13 +329,16 @@ class TranslationEngine:
             try:
                 start_time = time.time()
 
-                translation = await chain.ainvoke({
-                    "document_profile": self.document_profile.to_prompt_text(),
-                    "glossary": "\n".join([f"- {en}: {zh}" for en, zh in self.glossary.items()]),
-                    "section_title": " > ".join(chunk.section_path) if chunk.section_path else chunk.section_title,
-                    "context": chunk.context_text,
-                    "text": chunk.text
-                })
+                translation = await asyncio.wait_for(
+                    chain.ainvoke({
+                        "document_profile": self.document_profile.to_prompt_text(),
+                        "glossary": "\n".join([f"- {en}: {zh}" for en, zh in self.glossary.items()]),
+                        "section_title": " > ".join(chunk.section_path) if chunk.section_path else chunk.section_title,
+                        "context": chunk.context_text,
+                        "text": chunk.text
+                    }),
+                    timeout=self.config.request_timeout,
+                )
 
                 # 清理输出
                 translation = self.clean_output(translation)
@@ -478,14 +484,17 @@ class TranslationEngine:
         prompt = ChatPromptTemplate.from_template(prompt_template)
         chain = prompt | self.llm_checker | StrOutputParser()
 
-        return await chain.ainvoke({
-            "section_title": " > ".join(chunk.section_path) if chunk.section_path else chunk.section_title,
-            "original": chunk.text,
-            "translation": translation,
-            "issues": issues_text,
-            "document_profile": self.document_profile.to_prompt_text(),
-            "glossary": "\n".join([f"- {en}: {zh}" for en, zh in self.glossary.items()]),
-        })
+        return await asyncio.wait_for(
+            chain.ainvoke({
+                "section_title": " > ".join(chunk.section_path) if chunk.section_path else chunk.section_title,
+                "original": chunk.text,
+                "translation": translation,
+                "issues": issues_text,
+                "document_profile": self.document_profile.to_prompt_text(),
+                "glossary": "\n".join([f"- {en}: {zh}" for en, zh in self.glossary.items()]),
+            }),
+            timeout=self.config.request_timeout,
+        )
 
     async def translate_batch(
         self,

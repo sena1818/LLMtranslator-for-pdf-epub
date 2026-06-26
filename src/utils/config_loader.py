@@ -116,6 +116,11 @@ class Config:
         return self.get("concurrency.rate_limit_per_minute", 200)
 
     @property
+    def request_timeout(self) -> float:
+        """单次 LLM 请求的最长等待秒数 (超时后由重试逻辑接管)"""
+        return float(self.get("concurrency.request_timeout", 120))
+
+    @property
     def chunk_size(self) -> int:
         """获取文本块大小"""
         return self.get("text_splitting.chunk_size", 3600)
