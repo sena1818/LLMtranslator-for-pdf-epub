@@ -76,7 +76,6 @@ LLMtranslator-for-pdf-epub/
 │   │   ├── translator.py             # TranslationEngine - 异步翻译核心
 │   │   ├── chunk_planner.py          # ChunkPlanner - 章节感知分块器
 │   │   ├── rate_limiter.py           # RateLimiter - Token Bucket 限流
-│   │   ├── output_manager.py         # OutputManager - 顺序输出管理
 │   │   ├── translation_cache.py      # TranslationCache - SQLite 缓存层
 │   │   └── validator.py              # TranslationValidator - 质量检查器
 │   │
@@ -84,6 +83,7 @@ LLMtranslator-for-pdf-epub/
 │   │   └── document_converter.py     # PDF/EPUB → Markdown 转换器
 │   │
 │   ├── services/
+│   │   ├── result_renderer.py        # CLI/Web 共用结果渲染器
 │   │   ├── markdown_formatter.py     # 智能 Markdown 格式化
 │   │   ├── export_service.py         # HTML/双语导出服务
 │   │   └── epub_artifact_cleaner.py  # Pandoc/EPUB 残留清理

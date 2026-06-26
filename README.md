@@ -171,7 +171,8 @@ translator/
 │   ├── core/                 # 核心翻译引擎
 │   │   ├── translator.py     # 异步翻译引擎
 │   │   ├── rate_limiter.py   # Token Bucket 速率限制
-│   │   └── output_manager.py # 顺序输出管理
+│   │   ├── translation_cache.py # SQLite chunk 缓存
+│   │   └── validator.py      # 翻译质量校验
 │   ├── converters/           # 文档转换器
 │   │   └── document_converter.py
 │   ├── services/             # 导出与格式化服务

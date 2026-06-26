@@ -53,12 +53,15 @@ Chunk 缓存落盘 (SQLite)
 ### 七大核心组件
 
 1. **ChunkPlanner** (`src/core/chunk_planner.py`) - 按 Markdown 标题树规划 chunk，产出稳定 `chunk_id`（SHA1 哈希）
-2. **TranslationEngine** (`src/core/translator.py`) - 异步翻译引擎，含 Token Bucket 限流 + 指数退避重试 + 三角色 Agent
+2. **TranslationEngine** (`src/core/translator.py`) - 异步翻译引擎，含 Token Bucket 限流 + 请求超时 + 指数退避重试 + 三角色 Agent；只产出结果对象，不负责落盘
 3. **TranslationValidator** (`src/core/validator.py`) - 检测未翻译英文、术语遗漏、Markdown 结构丢失
-4. **TranslationCache** (`src/core/translation_cache.py`) - SQLite 缓存层，支持恢复式重跑
-5. **OutputManager** (`src/core/output_manager.py`) - 顺序写入缓冲，解决异步乱序问题
-6. **MarkdownFormatter** (`src/services/markdown_formatter.py`) - 清理 Pandoc 残留并修复排版
+4. **TranslationCache** (`src/core/translation_cache.py`) - SQLite 缓存层（WAL + busy_timeout），支持恢复式重跑
+5. **result_renderer** (`src/services/result_renderer.py`) - CLI/Web 共用的统一结果渲染器（单语/双语）
+6. **ResultPostprocessPipeline** (`src/pipelines/postprocess/`) - 统一后处理：智能格式化 + 资源同步 + HTML 导出
 7. **TaskWorker** (`src/api/worker.py`) - Web 模式的后台任务队列处理器
+
+> Prompt 模板已外置到 `prompts/{domain}.md`，由 `PromptLibrary`
+> (`src/utils/prompt_library.py`) 按体裁加载，可用 `--domain` 切换。
 
 ---
 
@@ -76,7 +79,6 @@ LLMtranslator-for-pdf-epub/
 │   │   ├── translator.py             # TranslationEngine - 异步翻译核心
 │   │   ├── chunk_planner.py          # ChunkPlanner - 章节感知分块器
 │   │   ├── rate_limiter.py           # RateLimiter - Token Bucket 限流
-│   │   ├── output_manager.py         # OutputManager - 顺序输出管理
 │   │   ├── translation_cache.py      # TranslationCache - SQLite 缓存层
 │   │   └── validator.py              # TranslationValidator - 质量检查器
 │   │
@@ -85,6 +87,7 @@ LLMtranslator-for-pdf-epub/
 │   │
 │   ├── services/
 │   │   ├── markdown_formatter.py     # 智能 Markdown 格式化
+│   │   ├── result_renderer.py        # CLI/Web 共用的结果渲染器
 │   │   ├── export_service.py         # HTML/双语导出服务
 │   │   └── epub_artifact_cleaner.py  # Pandoc/EPUB 残留清理
 │   │
@@ -92,13 +95,8 @@ LLMtranslator-for-pdf-epub/
 │   │   └── translation_models.py     # DocumentProfile、TranslationResult 数据类
 │   │
 │   ├── pipelines/
-│   │   ├── translate/
-│   │   │   └── document_translation_pipeline.py
 │   │   └── postprocess/
-│   │       └── result_postprocess_pipeline.py
-│   │
-│   ├── application/use_cases/
-│   │   └── run_translation_pipeline.py   # CLI/Web 共用的翻译用例
+│   │       └── result_postprocess_pipeline.py  # 格式化 + 资源同步 + HTML 导出
 │   │
 │   ├── api/                          # Web API 层
 │   │   ├── app.py                    # FastAPI 应用入口
@@ -117,10 +115,16 @@ LLMtranslator-for-pdf-epub/
 │   │       └── db.py                 # SQLite 数据库管理（任务队列）
 │   │
 │   └── utils/
-│       └── config_loader.py          # 配置加载器（单例）
+│       ├── config_loader.py          # 配置加载器（单例）
+│       └── prompt_library.py         # 按 domain 加载 Prompt 模板
+│
+├── prompts/                          # 外置翻译 Prompt 模板（按体裁）
+│   ├── philosophy.md                 # 默认：后现代哲学
+│   ├── literary.md                   # 文学/小说
+│   └── general.md                    # 通用
 │
 ├── config/
-│   ├── config.yaml                   # 主配置文件（并发数、API、分块参数）
+│   ├── config.yaml                   # 主配置文件（并发数、API、分块、体裁）
 │   └── artifact_rules.yaml           # Pandoc/EPUB 残留清理规则
 │
 ├── data/
@@ -167,6 +171,9 @@ python translate.py data/input/book.md --skip-conversion
 
 # 双语对照输出
 python translate.py data/input/book.md --skip-conversion --bilingual
+
+# 切换翻译体裁（philosophy/literary/general）
+python translate.py data/input/novel.md --skip-conversion --domain literary
 
 # 指定输出路径
 python translate.py data/input/book.md -o output_final/result.md
