@@ -13,7 +13,7 @@ from .glossary_service import GlossaryService
 
 from ...converters.document_converter import DocumentConverter
 from ...services.export_service import ExportService
-from ...application.use_cases.run_translation_pipeline import RunTranslationPipeline
+from ...core.translator import TranslationEngine
 
 
 class TranslationService:
@@ -142,10 +142,10 @@ class TranslationService:
                     glossary = glossary_data.get("terms", {})
 
             # 5. 初始化翻译引擎
-            translation_use_case = RunTranslationPipeline(glossary=glossary)
+            engine = TranslationEngine(glossary=glossary)
 
             # 6. 文本分块
-            chunks = translation_use_case.plan_chunks(text)
+            chunks = engine.plan_chunks(text)
             task.progress.current = 0
             task.progress.total = len(chunks)
             task.progress.percentage = 0.0
@@ -189,14 +189,13 @@ class TranslationService:
 
             # 9. 执行翻译 (支持双语对照模式)
             logger.info("🎬 开始调用 LLM 进行翻译...")
-            pipeline_output = await translation_use_case.execute(
+            results = await engine.translate_batch(
                 text=text,
                 output_path=engine_output_path,
                 progress_callback=progress_callback,
                 bilingual=task.bilingual,
                 prepared_chunks=chunks,
             )
-            results = pipeline_output.results
 
             self._write_result_markdown(
                 output_path=mono_output_path,
