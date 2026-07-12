@@ -1,0 +1,54 @@
+# 一条命令起全套：docker compose up --build
+# api 服务对外提供 Web 界面 + REST API；worker 服务独立消费翻译队列。
+# 两者共用同一镜像与数据卷，SQLite 任务库 / 翻译缓存 / 上传 / 结果均落在命名卷中，容器重启不丢。
+name: agentic-translator
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: agentic-translator:latest
+    command: python run_server.py
+    ports:
+      - "8000:8000"
+    environment:
+      # API 密钥经环境变量注入，值取自项目根目录 .env（见 .env.example）
+      SILICONFLOW_API_KEY: ${SILICONFLOW_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      # worker 独立成服务，API 容器不再内联跑 worker
+      TRANSLATION_INLINE_WORKER: "0"
+      TRANSLATION_SERVER_RELOAD: "0"
+    volumes:
+      - translator-data:/app/data
+      - translator-logs:/app/logs
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0) if urllib.request.urlopen('http://localhost:8000/api/health').status==200 else sys.exit(1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: agentic-translator:latest
+    command: python run_worker.py
+    environment:
+      SILICONFLOW_API_KEY: ${SILICONFLOW_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+    volumes:
+      - translator-data:/app/data
+      - translator-logs:/app/logs
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  translator-data:
+  translator-logs:

@@ -2,8 +2,9 @@
 
 基于大语言模型的专业文本翻译系统，专为复杂的后现代哲学文本设计。支持 PDF/EPUB/Markdown 格式，提供术语表管理和智能格式化功能。
 
+[![CI](https://github.com/sena1818/LLMtranslator-for-pdf-epub/actions/workflows/ci.yml/badge.svg)](https://github.com/sena1818/LLMtranslator-for-pdf-epub/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 
 ## ✨ 核心特性
 
@@ -20,7 +21,27 @@
 - 📚 **术语表管理** - 可视化管理翻译术语，支持导入导出
 - 🌗 **双语对照导出** - 双语任务可导出 Markdown 与双栏 HTML
 
-## 🚀 快速开始
+## 🐳 Docker 一键启动（推荐）
+
+无需本地安装 Python / Node，一条命令拉起前端 + API + worker：
+
+```bash
+# 1. 配置密钥
+cp .env.example .env      # 然后填入真实的 SILICONFLOW_API_KEY
+
+# 2. 构建并启动全套服务
+docker compose up --build
+
+# 3. 打开浏览器
+# Web 界面: http://localhost:8000
+# API 文档: http://localhost:8000/docs
+```
+
+- **api** 服务对外提供 Web 界面与 REST API，**worker** 服务独立消费翻译队列，两者共用同一镜像。
+- 任务库、翻译缓存、上传文件与翻译结果全部落在命名数据卷（`translator-data` / `translator-logs`），`docker compose down` 后再 `up` 数据不丢；如需彻底清空用 `docker compose down -v`。
+- 停止服务：`docker compose down`。
+
+## 🚀 快速开始（本地开发）
 
 ### 安装依赖
 

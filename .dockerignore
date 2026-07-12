@@ -1,0 +1,52 @@
+# 版本控制与本地工具缓存
+.git
+.gitignore
+.github
+.vscode
+.pytest_cache
+.ruff_cache
+.pycache
+.claude
+
+# Python 运行产物
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+
+# 前端依赖与构建产物（镜像内会重新 npm ci + build）
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend_dist/
+
+# 运行期数据与产物（由数据卷提供，不进镜像）
+data/uploads/
+data/results/
+data/output/
+data/temp/
+data/input/
+data/*.db
+logs/
+output/
+output_final/
+marker_output/
+BookTrans/
+
+# 密钥与本地环境
+.env
+.env.local
+
+# 文档与设计稿（运行时不需要）
+design-preview/
+docs/
+*.md
+!README.md
+
+# 杂项
+.DS_Store
+*.log
+*.pid
