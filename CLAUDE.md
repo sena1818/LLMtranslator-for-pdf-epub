@@ -226,3 +226,19 @@ tail -f logs/translation_async.log
 - **成功率**: 100% (344/344)
 
 **优化建议**：并发 20 + RPM 400 可将速度提升至 20+ chunks/分钟
+
+---
+
+## Agent skills
+
+### Issue tracker
+
+Issues 跟踪在 GitHub（sena1818/LLMtranslator-for-pdf-epub），使用 gh CLI 操作；外部 PR 不作为 triage 请求来源。See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+五个 triage 标签使用规范默认名（needs-triage / needs-info / ready-for-agent / ready-for-human / wontfix）。See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+单上下文布局：根目录 CONTEXT.md + docs/adr/。See `docs/agents/domain.md`.
