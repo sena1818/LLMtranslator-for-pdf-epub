@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 try:
     import yaml
@@ -45,22 +45,22 @@ class EpubArtifactCleaner:
         text = self._collapse_blank_lines(text)
         return text.strip() + "\n"
 
-    def _load_rules(self) -> Dict[str, Any]:
+    def _load_rules(self) -> dict[str, Any]:
         config = get_config()
         rules_path = config.artifact_rules_path
         if yaml is None or not rules_path.exists():
             return {}
-        with open(rules_path, "r", encoding="utf-8") as handle:
+        with open(rules_path, encoding="utf-8") as handle:
             payload = yaml.safe_load(handle) or {}
         return payload
 
-    def _resolve_rules(self, source_type: str) -> Dict[str, Any]:
-        merged: Dict[str, Any] = {}
+    def _resolve_rules(self, source_type: str) -> dict[str, Any]:
+        merged: dict[str, Any] = {}
         self._merge_rule_section(merged, self.rule_sets.get("common", {}))
         self._merge_source_rules(merged, source_type)
         return merged
 
-    def _merge_source_rules(self, merged: Dict[str, Any], source_type: str):
+    def _merge_source_rules(self, merged: dict[str, Any], source_type: str):
         if not source_type:
             return
         section = self.rule_sets.get(source_type, {})
@@ -68,7 +68,7 @@ class EpubArtifactCleaner:
             self._merge_source_rules(merged, parent)
         self._merge_rule_section(merged, section)
 
-    def _merge_rule_section(self, merged: Dict[str, Any], section: Dict[str, Any]):
+    def _merge_rule_section(self, merged: dict[str, Any], section: dict[str, Any]):
         for key, value in section.items():
             if key == "inherit_from":
                 continue

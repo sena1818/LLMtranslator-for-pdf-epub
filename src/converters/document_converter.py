@@ -2,10 +2,9 @@
 文档转换器
 支持 PDF 和 EPUB 转 Markdown
 """
+import logging
 import subprocess
 from pathlib import Path
-from typing import Optional
-import logging
 
 from ..pipelines.preprocess.artifact_cleaner import EpubArtifactCleaner
 
@@ -41,7 +40,7 @@ class DocumentConverter:
         self,
         pdf_path: Path,
         output_dir: Path
-    ) -> Optional[Path]:
+    ) -> Path | None:
         """
         PDF 转 Markdown (使用 marker)
 
@@ -69,14 +68,14 @@ class DocumentConverter:
 
         logger.info(f"正在转换 PDF: {pdf_path.name}")
         logger.info(f"命令: {' '.join(cmd)}")
-        
+
         # 修改: 不捕获输出，直接显示在终端，以便用户看到 marker 的进度条
         # result = subprocess.run(cmd, capture_output=True, text=True)
         result = subprocess.run(cmd, check=False)
 
         if result.returncode != 0:
             logger.error(f"PDF 转换失败 (退出码: {result.returncode})")
-            raise RuntimeError(f"PDF 转换失败")
+            raise RuntimeError("PDF 转换失败")
 
         # 查找生成的 Markdown 文件 (marker 可能会在子目录中生成)
         # 1. 直接在 output_dir 中查找
@@ -108,7 +107,7 @@ class DocumentConverter:
         epub_path: Path,
         output_dir: Path,
         source_type: str = "epub",
-    ) -> Optional[Path]:
+    ) -> Path | None:
         """
         EPUB 转 Markdown (使用 pandoc)
 
@@ -144,7 +143,7 @@ class DocumentConverter:
             return None
 
         if md_file.exists():
-            with open(md_file, 'r', encoding='utf-8') as f:
+            with open(md_file, encoding='utf-8') as f:
                 content = f.read()
             cleaned = self.epub_cleaner.clean(content, source_type=source_type)
             with open(md_file, 'w', encoding='utf-8') as f:
@@ -158,7 +157,7 @@ class DocumentConverter:
         self,
         input_path: Path,
         output_dir: Path
-    ) -> Optional[Path]:
+    ) -> Path | None:
         """
         智能转换(自动识别文件类型)
 

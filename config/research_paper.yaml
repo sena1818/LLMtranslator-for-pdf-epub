@@ -1,0 +1,103 @@
+# 科研论文翻译配置
+
+translation_profile:
+  name: "research-paper"
+
+api:
+  provider: "siliconflow"
+  base_url: "https://api.siliconflow.cn/v1"
+  model: "deepseek-ai/DeepSeek-V3"
+
+  translator:
+    temperature: 0.15
+    max_retries: 4
+
+  checker:
+    temperature: 0.05
+
+concurrency:
+  max_concurrent_requests: 6
+  batch_size: 4
+  rate_limit_per_minute: 160
+  request_timeout: 90
+
+text_splitting:
+  chunk_size: 3200
+  target_chunk_size: 2600
+  min_chunk_size: 900
+  chunk_overlap: 200
+  context_window: 1800
+  separators: ["\n\n", "\n", ".", "!", "?", " ", ""]
+
+conversion:
+  pdf:
+    disable_ocr: true
+    disable_multiprocessing: false
+    disable_image_extraction: false
+
+paths:
+  input: "data/input"
+  output: "data/output"
+  temp: "data/temp"
+  glossaries: "data/glossaries"
+  logs: "logs"
+  artifact_rules: "config/artifact_rules.yaml"
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s - [%(levelname)s] - %(message)s"
+
+server:
+  port: 8000
+  reload: false
+  reload_dirs:
+    - "src"
+    - "frontend"
+    - "run_server.py"
+    - "run_worker.py"
+
+quality:
+  max_fix_attempts: 2
+  enable_qa_check: true
+  untranslated_word_span: 10
+  max_glossary_checks: 40
+  qa_checks:
+    - "terminology"
+    - "untranslated"
+    - "format"
+
+worker:
+  inline_enabled: true
+  poll_interval_seconds: 2
+  stale_after_seconds: 900
+  max_parallel_tasks: 1
+  processes: 1
+
+multi_agent:
+  enabled: true
+  analyst_temperature: 0.05
+  analyst_max_chars: 16000
+  analyst_max_sections: 16
+  analyst_max_term_hints: 20
+
+prompt:
+  translator_role: "你是严谨的科研论文翻译者，负责将数学、计算机科学与机器学习论文翻译为适合精读的中文版本。"
+  translation_requirements:
+    - "完整保留所有 Markdown 结构与论文信息：标题、作者、摘要、章节编号、图片、表格、链接、脚注、引用、代码块"
+    - "保持科研写作风格：准确、克制、术语统一，不要擅自扩写、简化或改写论证强度"
+    - "公式、符号、变量名、算法名、定理名、引理名、证明结构必须保留；只翻译其周围自然语言"
+    - "图、表、算法、章节、附录、公式编号及正文中的交叉引用必须前后一致，例如 Figure 1 -> 图 1, Table 2 -> 表 2, Appendix A -> 附录 A"
+    - "术语与缩写首次出现时优先使用 中文译名（English Term, Abbreviation） 或 中文译名（English Term） 形式，后文保持一致"
+    - "严格使用术语表中的译名；若术语表未覆盖，则优先采用学界常见译法并在首次出现时保留英文"
+    - "直接输出译文，不要添加解释性按语、译者注或任何多余前言"
+  repair_requirements:
+    - "只修正被指出的问题，不重写无关段落"
+    - "严守原文结构，尤其保留标题、图表、编号、引用、公式、代码块与列表"
+    - "若正文提到图表、算法、公式或附录，修正时必须检查对应编号是否仍然一致"
+    - "不要补充评论、背景知识或解释"
+    - "直接输出修正后的完整译文"
+  analyst_requirements:
+    - "不要输出 JSON 以外的任何文字"
+    - "style_notes 最多 4 条，聚焦学科文体、论证密度和符号处理"
+    - "terminology_hints 最多 {max_term_hints} 条，优先总结核心术语、缩写、数据集、模型名、算法名"
+    - "section_overview 只保留最关键的章节线索"

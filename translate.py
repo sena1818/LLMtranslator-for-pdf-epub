@@ -8,20 +8,20 @@
 3. 执行翻译
 4. 保存结果
 """
-import asyncio
 import argparse
+import asyncio
 import json
 import logging
-from pathlib import Path
 import sys
+from pathlib import Path
 
 # 添加 src 到路径
 sys.path.insert(0, str(Path(__file__).parent))
 
-from src.converters.document_converter import DocumentConverter
-from src.utils.config_loader import get_config
 from src.application.use_cases.run_translation_pipeline import RunTranslationPipeline
+from src.converters.document_converter import DocumentConverter
 from src.pipelines.postprocess.result_postprocess_pipeline import ResultPostprocessPipeline
+from src.utils.config_loader import get_config
 
 # 配置日志
 logging.basicConfig(
@@ -93,7 +93,7 @@ class TranslationPipeline:
             glossary_path = self.config.get_path("glossaries") / "glossary.json"
 
         if glossary_path.exists():
-            with open(glossary_path, 'r', encoding='utf-8') as f:
+            with open(glossary_path, encoding='utf-8') as f:
                 glossary = json.load(f)
             logger.info(f"📚 加载术语表: {len(glossary)} 个词条")
             return glossary
@@ -132,7 +132,7 @@ class TranslationPipeline:
             source_type = "markdown"
         else:
             logger.info(f"📄 输入文件: {input_file}")
-            logger.info(f"🔄 开始格式转换...")
+            logger.info("🔄 开始格式转换...")
 
             temp_dir = self.config.get_path("temp") / input_file.stem
             markdown_file = self.converter.convert(input_file, temp_dir)
@@ -144,7 +144,7 @@ class TranslationPipeline:
 
         # 步骤 2: 读取文件
         logger.info(f"📖 读取文件: {markdown_file}")
-        with open(markdown_file, 'r', encoding='utf-8') as f:
+        with open(markdown_file, encoding='utf-8') as f:
             text = f.read()
 
         # 步骤 3: 加载术语表
@@ -167,7 +167,7 @@ class TranslationPipeline:
         # 初始化输出文件
         with open(output_file, 'w', encoding='utf-8') as f:
             f.write(f"# {input_file.stem} - 中文翻译\n\n")
-            f.write(f"> 由 AI 自动翻译\n")
+            f.write("> 由 AI 自动翻译\n")
             f.write(f"> 源文件: {input_file.name}\n\n")
 
         # 步骤 7: 进度回调

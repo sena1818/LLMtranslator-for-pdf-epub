@@ -5,33 +5,32 @@
 """
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Awaitable, Callable, Dict, List, Optional
 
 from ...core.chunk_planner import TextChunk
 from ...core.translator import TranslationEngine, TranslationResult
 
-
-ProgressCallback = Optional[Callable[[dict], Awaitable[None]]]
+ProgressCallback = Callable[[dict], Awaitable[None]] | None
 
 
 @dataclass
 class TranslationPipelineOutput:
     """共享翻译流水线的结果对象"""
 
-    chunks: List[TextChunk]
-    results: List[TranslationResult]
+    chunks: list[TextChunk]
+    results: list[TranslationResult]
     engine: TranslationEngine
 
 
 class DocumentTranslationPipeline:
     """封装文本分块与批量翻译，供 CLI / API 共用。"""
 
-    def __init__(self, glossary: Optional[Dict[str, str]] = None, engine_cls=TranslationEngine):
+    def __init__(self, glossary: dict[str, str] | None = None, engine_cls=TranslationEngine):
         self.engine = engine_cls(glossary=glossary or {})
 
-    def plan_chunks(self, text: str) -> List[TextChunk]:
+    def plan_chunks(self, text: str) -> list[TextChunk]:
         """结构化分块"""
         return self.engine.plan_chunks(text)
 
@@ -41,7 +40,7 @@ class DocumentTranslationPipeline:
         output_path: Path,
         bilingual: bool = False,
         progress_callback: ProgressCallback = None,
-        prepared_chunks: Optional[List[TextChunk]] = None,
+        prepared_chunks: list[TextChunk] | None = None,
     ) -> TranslationPipelineOutput:
         """执行完整翻译"""
         chunks = prepared_chunks or self.plan_chunks(text)

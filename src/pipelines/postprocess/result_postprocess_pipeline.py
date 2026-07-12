@@ -8,8 +8,8 @@
 """
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable, List, Optional
 
 from .export_service import ExportService
 from .markdown_formatter import SmartMarkdownFormatter
@@ -33,9 +33,9 @@ class ResultPostprocessPipeline:
         markdown_paths: Iterable[Path | None],
         asset_sources: Iterable[Path],
         task_id: str,
-    ) -> List[str]:
+    ) -> list[str]:
         """同步资源到结果目录。"""
-        copied: List[str] = []
+        copied: list[str] = []
         normalized_sources = [Path(source) for source in asset_sources if Path(source).exists()]
         for markdown_path in markdown_paths:
             if markdown_path is None:
@@ -52,8 +52,8 @@ class ResultPostprocessPipeline:
     def export_bilingual_html(
         self,
         markdown_path: Path,
-        output_path: Optional[Path] = None,
-        title: Optional[str] = None,
+        output_path: Path | None = None,
+        title: str | None = None,
     ) -> Path:
         """导出双语 HTML。"""
         html_path = Path(

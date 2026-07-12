@@ -7,7 +7,6 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 try:
     import aiosqlite
@@ -58,7 +57,7 @@ class TranslationCache:
 
         self._initialized = True
 
-    async def get(self, cache_key: str) -> Optional[CacheEntry]:
+    async def get(self, cache_key: str) -> CacheEntry | None:
         await self.initialize()
 
         async with aiosqlite.connect(self.db_path) as db:

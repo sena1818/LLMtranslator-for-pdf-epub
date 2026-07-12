@@ -9,9 +9,8 @@ import mimetypes
 import re
 import shutil
 import zipfile
-from pathlib import Path
-from typing import List, Tuple
 from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass
@@ -221,7 +220,7 @@ class ExportService:
 """
 
     @classmethod
-    def parse_bilingual_markdown(cls, content: str) -> List[BilingualParagraph]:
+    def parse_bilingual_markdown(cls, content: str) -> list[BilingualParagraph]:
         """
         解析双语对照 Markdown 文件
 
@@ -397,7 +396,7 @@ class ExportService:
             title = markdown_path.stem
 
         # 读取 Markdown
-        with open(markdown_path, 'r', encoding='utf-8') as f:
+        with open(markdown_path, encoding='utf-8') as f:
             content = f.read()
 
         # 解析双语段落
@@ -443,15 +442,15 @@ class ExportService:
         保留非双语元数据区块，仅移除每个双语段中的原文引用块与分隔线。
         """
         sections = re.split(r'(\n---+\n)', content)
-        rendered_sections: List[str] = []
+        rendered_sections: list[str] = []
 
         for section in sections:
             if not section or re.fullmatch(r'\n---+\n', section):
                 continue
 
             lines = section.split('\n')
-            source_lines: List[str] = []
-            translation_lines: List[str] = []
+            source_lines: list[str] = []
+            translation_lines: list[str] = []
             in_quote = False
             quote_ended = False
 
@@ -489,7 +488,7 @@ class ExportService:
         content = re.sub(r'^\s*---+\s*$\n?', '', content, flags=re.MULTILINE)
 
         lines = content.splitlines()
-        normalized_lines: List[str] = []
+        normalized_lines: list[str] = []
         last_image_line = ""
         blank_streak = 0
 
@@ -519,9 +518,9 @@ class ExportService:
     def sync_result_assets(
         cls,
         markdown_path: str | Path,
-        asset_sources: List[str | Path],
+        asset_sources: list[str | Path],
         task_id: str | None = None,
-    ) -> List[str]:
+    ) -> list[str]:
         """
         将文档转换阶段提取出的图片同步到结果目录，并重写 Markdown 图片路径。
         """
@@ -532,7 +531,7 @@ class ExportService:
 
         content = markdown_path.read_text(encoding="utf-8")
         image_paths = re.findall(r'!\[[^\]]*\]\(([^)]+)\)', content)
-        copied: List[str] = []
+        copied: list[str] = []
 
         for raw_path in image_paths:
             filename = Path(raw_path).name
@@ -605,7 +604,7 @@ class ExportService:
         return f'<img src="{src}" alt="{alt or Path(raw_path).stem}">'
 
     @classmethod
-    def _candidate_asset_roots(cls, markdown_path: Path | None) -> List[Path]:
+    def _candidate_asset_roots(cls, markdown_path: Path | None) -> list[Path]:
         if markdown_path is None:
             return []
         task_id = markdown_path.stem
@@ -622,7 +621,7 @@ class ExportService:
         cls,
         image_path: Path,
         markdown_path: Path | None,
-        asset_roots: List[str | Path],
+        asset_roots: list[str | Path],
     ) -> Path | None:
         filename = image_path.name
         candidates = []
@@ -650,7 +649,7 @@ class ExportService:
     @classmethod
     def export_from_pairs(
         cls,
-        pairs: List[Tuple[str, str]],
+        pairs: list[tuple[str, str]],
         output_path: str,
         title: str = "翻译结果"
     ) -> str:

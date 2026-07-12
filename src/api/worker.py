@@ -10,8 +10,8 @@ import socket
 from collections.abc import Awaitable
 from contextlib import suppress
 
-from .services.translation_service import TranslationService
 from ..utils.config_loader import get_config
+from .services.translation_service import TranslationService
 
 
 class TaskWorker:

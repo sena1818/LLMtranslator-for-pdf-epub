@@ -3,19 +3,17 @@
 """
 import asyncio
 import uuid
-from pathlib import Path
 from datetime import datetime
-from typing import Optional, Tuple, List
+from pathlib import Path
 
-from ...domain.models.task_models import TranslationTask, TaskStatus, TaskProgress
+from ...application.use_cases.run_translation_pipeline import RunTranslationPipeline
+from ...converters.document_converter import DocumentConverter
+from ...core.translator import TranslationEngine
+from ...domain.models.task_models import TaskProgress, TaskStatus, TranslationTask
+from ...infrastructure.persistence.task_repository import TaskRepository
+from ...pipelines.postprocess.result_postprocess_pipeline import ResultPostprocessPipeline
 from ..database.db import Database
 from .glossary_service import GlossaryService
-
-from ...converters.document_converter import DocumentConverter
-from ...application.use_cases.run_translation_pipeline import RunTranslationPipeline
-from ...pipelines.postprocess.result_postprocess_pipeline import ResultPostprocessPipeline
-from ...infrastructure.persistence.task_repository import TaskRepository
-from ...core.translator import TranslationEngine
 
 
 class TranslationService:
@@ -42,7 +40,7 @@ class TranslationService:
         self,
         file_content: bytes,
         filename: str,
-        glossary_id: Optional[str] = None,
+        glossary_id: str | None = None,
         bilingual: bool = False
     ) -> TranslationTask:
         """创建翻译任务"""
@@ -73,7 +71,7 @@ class TranslationService:
 
         return task
 
-    async def claim_next_pending_task(self) -> Optional[TranslationTask]:
+    async def claim_next_pending_task(self) -> TranslationTask | None:
         """认领一个待处理任务"""
         return await self.tasks.claim_next_pending()
 
@@ -87,7 +85,7 @@ class TranslationService:
         """
         import logging
         logger = logging.getLogger(__name__)
-        
+
         task = await self.tasks.get(task_id)
         if not task:
             logger.error(f"任务不存在: {task_id}")
@@ -95,7 +93,7 @@ class TranslationService:
 
         try:
             logger.info(f"🚀 开始翻译任务: {task.filename} (ID: {task_id})")
-            
+
             if not already_claimed:
                 # 兼容直接调用场景
                 task.status = TaskStatus.PROCESSING
@@ -121,10 +119,10 @@ class TranslationService:
                         logger.info(f"✅ 文档转换成功: {markdown_file}")
                 except Exception as e:
                     logger.error(f"❌ 文档转换失败: {str(e)}")
-                    raise RuntimeError(f"文档转换失败: {str(e)}")
+                    raise RuntimeError(f"文档转换失败: {str(e)}") from e
 
                 if markdown_file is None:
-                    raise RuntimeError(f"文档转换失败: 未能生成 Markdown 文件")
+                    raise RuntimeError("文档转换失败: 未能生成 Markdown 文件")
             else:
                 markdown_file = file_path
 
@@ -135,7 +133,7 @@ class TranslationService:
             task.updated_at = datetime.now()
             await self.tasks.update(task)
 
-            with open(markdown_file, 'r', encoding='utf-8') as f:
+            with open(markdown_file, encoding='utf-8') as f:
                 text = f.read()
 
             # 4. 加载术语表
@@ -281,7 +279,7 @@ class TranslationService:
             task.updated_at = datetime.now()
             await self.tasks.update(task)
 
-    def _find_reusable_markdown(self, file_path: Path, temp_dir: Path) -> Optional[Path]:
+    def _find_reusable_markdown(self, file_path: Path, temp_dir: Path) -> Path | None:
         """查找可复用的转换结果，避免中断后重复转换"""
         if file_path.suffix.lower() not in {".epub", ".mobi"}:
             return None
@@ -307,7 +305,7 @@ class TranslationService:
         self,
         output_path: Path,
         filename: str,
-        results: List,
+        results: list,
         bilingual: bool,
     ) -> None:
         """根据翻译结果渲染最终 Markdown，统一单语/双语产物格式。"""
@@ -333,11 +331,11 @@ class TranslationService:
                 f.write(content)
                 f.write("\n\n")
 
-    async def get_task(self, task_id: str) -> Optional[TranslationTask]:
+    async def get_task(self, task_id: str) -> TranslationTask | None:
         """获取任务"""
         return await self.tasks.get(task_id)
 
-    async def list_tasks(self, skip: int = 0, limit: int = 20) -> Tuple[List[TranslationTask], int]:
+    async def list_tasks(self, skip: int = 0, limit: int = 20) -> tuple[list[TranslationTask], int]:
         """获取任务列表"""
         return await self.tasks.list(skip, limit)
 

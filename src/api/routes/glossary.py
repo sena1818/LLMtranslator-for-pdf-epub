@@ -1,14 +1,14 @@
 """
 术语表 API 路由
 """
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
-from ..services.glossary_service import GlossaryService
 from ..models.glossary import (
     GlossaryCreateRequest,
-    GlossaryUpdateRequest,
     GlossaryModifyRequest,
+    GlossaryUpdateRequest,
 )
+from ..services.glossary_service import GlossaryService
 
 router = APIRouter(prefix="/api/glossary", tags=["glossary"])
 service = GlossaryService()

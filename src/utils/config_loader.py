@@ -2,9 +2,11 @@
 配置加载器
 从 YAML 文件加载配置,并支持环境变量覆盖
 """
+import hashlib
+import json
 import os
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any
 
 try:
     import yaml
@@ -37,12 +39,13 @@ class Config:
         # 加载 YAML 配置
         if config_path is None:
             config_path = self.root_dir / "config" / "config.yaml"
+        self.config_path = Path(config_path)
 
         if yaml is None:
             self.config = {}
         else:
-            with open(config_path, 'r', encoding='utf-8') as f:
-                self.config = yaml.safe_load(f)
+            with open(config_path, encoding='utf-8') as f:
+                self.config = yaml.safe_load(f) or {}
 
     def get(self, key_path: str, default: Any = None) -> Any:
         """
@@ -80,6 +83,23 @@ class Config:
         if relative_path:
             return self.root_dir / relative_path
         return self.root_dir
+
+    @property
+    def translation_profile_name(self) -> str:
+        """翻译配置档案名称，用于区分不同文体的翻译策略"""
+        return self.get("translation_profile.name", "default")
+
+    @property
+    def prompt_fingerprint(self) -> str:
+        """提示词指纹：档案与提示相关参数的哈希，用于缓存失效判断"""
+        payload = {
+            "profile": self.translation_profile_name,
+            "model": self.get("api.model"),
+            "translator": self.get("api.translator", {}),
+            "checker": self.get("api.checker", {}),
+        }
+        serialized = json.dumps(payload, sort_keys=True, ensure_ascii=False)
+        return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
     @property
     def artifact_rules_path(self) -> Path:
@@ -241,9 +261,12 @@ class Config:
 # 全局配置实例
 _config = None
 
+
 def get_config(config_path: str = None) -> Config:
     """
     获取全局配置实例 (单例模式)
+
+    传入新的配置路径时会重新加载；不传路径则复用已有实例。
 
     Args:
         config_path: 配置文件路径
@@ -253,5 +276,7 @@ def get_config(config_path: str = None) -> Config:
     """
     global _config
     if _config is None:
+        _config = Config(config_path)
+    elif config_path is not None and Path(config_path).resolve() != _config.config_path.resolve():
         _config = Config(config_path)
     return _config

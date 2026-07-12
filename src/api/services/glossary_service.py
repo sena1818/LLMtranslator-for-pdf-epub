@@ -2,9 +2,8 @@
 术语表管理服务
 """
 import json
-from pathlib import Path
-from typing import Dict, List, Optional
 from datetime import datetime
+from pathlib import Path
 
 
 class GlossaryService:
@@ -14,13 +13,13 @@ class GlossaryService:
         self.glossary_dir = Path("data/glossaries")
         self.glossary_dir.mkdir(parents=True, exist_ok=True)
 
-    async def list_glossaries(self) -> List[Dict]:
+    async def list_glossaries(self) -> list[dict]:
         """获取术语表列表"""
         result = []
 
         for file_path in self.glossary_dir.glob("*.json"):
             try:
-                with open(file_path, 'r', encoding='utf-8') as f:
+                with open(file_path, encoding='utf-8') as f:
                     terms = json.load(f)
 
                 result.append({
@@ -34,7 +33,7 @@ class GlossaryService:
 
         return sorted(result, key=lambda x: x["updated_at"], reverse=True)
 
-    async def get_glossary(self, glossary_id: str) -> Optional[Dict]:
+    async def get_glossary(self, glossary_id: str) -> dict | None:
         """获取术语表内容"""
         file_path = self.glossary_dir / f"{glossary_id}.json"
 
@@ -42,7 +41,7 @@ class GlossaryService:
             return None
 
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, encoding='utf-8') as f:
                 terms = json.load(f)
 
             return {
@@ -53,7 +52,7 @@ class GlossaryService:
         except Exception:
             return None
 
-    async def create_glossary(self, name: str, terms: Dict[str, str]) -> Dict:
+    async def create_glossary(self, name: str, terms: dict[str, str]) -> dict:
         """创建术语表"""
         glossary_id = name.lower().replace(" ", "_")
         file_path = self.glossary_dir / f"{glossary_id}.json"
@@ -67,7 +66,7 @@ class GlossaryService:
             "term_count": len(terms)
         }
 
-    async def update_glossary(self, glossary_id: str, terms: Dict[str, str]) -> bool:
+    async def update_glossary(self, glossary_id: str, terms: dict[str, str]) -> bool:
         """更新术语表 (全量)"""
         file_path = self.glossary_dir / f"{glossary_id}.json"
 
@@ -82,9 +81,9 @@ class GlossaryService:
     async def modify_terms(
         self,
         glossary_id: str,
-        add: Dict[str, str] = None,
-        remove: List[str] = None
-    ) -> Optional[int]:
+        add: dict[str, str] = None,
+        remove: list[str] = None
+    ) -> int | None:
         """增量修改术语"""
         glossary = await self.get_glossary(glossary_id)
         if not glossary:
@@ -112,12 +111,12 @@ class GlossaryService:
         file_path.unlink()
         return True
 
-    async def import_from_file(self, file_content: bytes, name: str) -> Dict:
+    async def import_from_file(self, file_content: bytes, name: str) -> dict:
         """从文件导入"""
         terms = json.loads(file_content.decode('utf-8'))
         return await self.create_glossary(name, terms)
 
-    async def export_to_file(self, glossary_id: str) -> Optional[Path]:
+    async def export_to_file(self, glossary_id: str) -> Path | None:
         """导出到文件"""
         file_path = self.glossary_dir / f"{glossary_id}.json"
 

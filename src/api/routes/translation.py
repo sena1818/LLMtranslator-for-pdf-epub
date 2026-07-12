@@ -1,8 +1,8 @@
 """
 翻译任务 API 路由
 """
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
-from typing import Optional
+
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from ..services.translation_service import TranslationService
 
@@ -13,8 +13,8 @@ service = TranslationService()
 @router.post("/tasks", status_code=201)
 async def create_translation_task(
     file: UploadFile = File(...),
-    glossary_id: Optional[str] = Form(None),
-    bilingual: Optional[bool] = Form(False),
+    glossary_id: str | None = Form(None),
+    bilingual: bool | None = Form(False),
 ):
     """
     创建翻译任务

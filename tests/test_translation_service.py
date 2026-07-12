@@ -1,12 +1,11 @@
 import asyncio
 import tempfile
-import unittest
 from pathlib import Path
 
 from src.api.database.db import Database
 from src.api.services import translation_service as translation_service_module
-from src.domain.rules.chunk_planning import TextChunk
 from src.core.translator import TranslationResult
+from src.domain.rules.chunk_planning import TextChunk
 
 
 class FakeConverter:
@@ -57,111 +56,111 @@ class FakeEngine:
         ]
 
 
-class TranslationServiceStatusTestCase(unittest.TestCase):
-    def test_partial_success_status_is_persisted(self):
-        async def scenario():
-            original_engine = translation_service_module.TranslationEngine
-            original_converter = translation_service_module.DocumentConverter
-            temp_dir = tempfile.TemporaryDirectory()
-            test_db_path = Path(temp_dir.name) / "translation.db"
-            task = None
+def test_partial_success_status_is_persisted():
+    async def scenario():
+        original_engine = translation_service_module.TranslationEngine
+        original_converter = translation_service_module.DocumentConverter
+        temp_dir = tempfile.TemporaryDirectory()
+        test_db_path = Path(temp_dir.name) / "translation.db"
+        task = None
 
-            translation_service_module.TranslationEngine = FakeEngine
-            translation_service_module.DocumentConverter = FakeConverter
+        translation_service_module.TranslationEngine = FakeEngine
+        translation_service_module.DocumentConverter = FakeConverter
 
-            service = translation_service_module.TranslationService()
-            service.db = Database(str(test_db_path))
-            await service.db.initialize()
+        service = translation_service_module.TranslationService()
+        service.db = Database(str(test_db_path))
+        await service.db.initialize()
 
-            try:
-                task = await service.create_task(
-                    file_content=b"# title\n\nmock body\n",
-                    filename="service_case.md",
-                    bilingual=True,
-                )
-                await service.start_translation(task.task_id)
-                saved = await service.get_task(task.task_id)
-                mono_content = (Path("data/results") / f"{task.task_id}.md").read_text(encoding="utf-8")
-                bilingual_content = (Path("data/results") / f"{task.task_id}.bilingual.md").read_text(encoding="utf-8")
-                return task.task_id, saved, mono_content, bilingual_content
-            finally:
-                translation_service_module.TranslationEngine = original_engine
-                translation_service_module.DocumentConverter = original_converter
+        try:
+            task = await service.create_task(
+                file_content=b"# title\n\nmock body\n",
+                filename="service_case.md",
+                bilingual=True,
+            )
+            await service.start_translation(task.task_id)
+            saved = await service.get_task(task.task_id)
+            mono_content = (Path("data/results") / f"{task.task_id}.md").read_text(encoding="utf-8")
+            bilingual_content = (Path("data/results") / f"{task.task_id}.bilingual.md").read_text(encoding="utf-8")
+            return task.task_id, saved, mono_content, bilingual_content
+        finally:
+            translation_service_module.TranslationEngine = original_engine
+            translation_service_module.DocumentConverter = original_converter
 
-                if task is not None:
-                    upload_path = Path("data/uploads") / f"{task.task_id}_service_case.md"
-                    result_path = Path("data/results") / f"{task.task_id}.md"
-                    bilingual_result_path = Path("data/results") / f"{task.task_id}.bilingual.md"
-                    if upload_path.exists():
-                        upload_path.unlink()
-                    if result_path.exists():
-                        result_path.unlink()
-                    if bilingual_result_path.exists():
-                        bilingual_result_path.unlink()
-                temp_dir.cleanup()
+            if task is not None:
+                upload_path = Path("data/uploads") / f"{task.task_id}_service_case.md"
+                result_path = Path("data/results") / f"{task.task_id}.md"
+                bilingual_result_path = Path("data/results") / f"{task.task_id}.bilingual.md"
+                if upload_path.exists():
+                    upload_path.unlink()
+                if result_path.exists():
+                    result_path.unlink()
+                if bilingual_result_path.exists():
+                    bilingual_result_path.unlink()
+            temp_dir.cleanup()
 
-        task_id, saved, mono_content, bilingual_content = asyncio.run(scenario())
+    task_id, saved, mono_content, bilingual_content = asyncio.run(scenario())
 
-        self.assertEqual(saved.status.value, "partial_success")
-        self.assertTrue(saved.bilingual)
-        self.assertEqual(saved.progress.current, 2)
-        self.assertEqual(saved.result_url, f"/api/files/results/{task_id}")
-        self.assertIn("失败块索引", saved.error)
-        self.assertIn("译文 1", mono_content)
-        self.assertIn("> chunk-0", bilingual_content)
+    assert saved.status.value == "partial_success"
+    assert saved.bilingual
+    assert saved.progress.current == 2
+    assert saved.result_url == f"/api/files/results/{task_id}"
+    assert "失败块索引" in saved.error
+    assert "译文 1" in mono_content
+    assert "> chunk-0" in bilingual_content
 
-    def test_reuses_existing_epub_markdown_after_interruption(self):
-        async def scenario():
-            original_engine = translation_service_module.TranslationEngine
-            original_converter = translation_service_module.DocumentConverter
-            temp_dir = tempfile.TemporaryDirectory()
-            test_db_path = Path(temp_dir.name) / "translation.db"
-            task = None
 
-            translation_service_module.TranslationEngine = FakeEngine
-            translation_service_module.DocumentConverter = FailingConverter
+def test_reuses_existing_epub_markdown_after_interruption():
+    async def scenario():
+        original_engine = translation_service_module.TranslationEngine
+        original_converter = translation_service_module.DocumentConverter
+        temp_dir = tempfile.TemporaryDirectory()
+        test_db_path = Path(temp_dir.name) / "translation.db"
+        task = None
 
-            service = translation_service_module.TranslationService()
-            service.db = Database(str(test_db_path))
-            await service.db.initialize()
+        translation_service_module.TranslationEngine = FakeEngine
+        translation_service_module.DocumentConverter = FailingConverter
 
-            try:
-                task = await service.create_task(
-                    file_content=b"placeholder epub bytes",
-                    filename="resume_case.epub",
-                    bilingual=False,
-                )
+        service = translation_service_module.TranslationService()
+        service.db = Database(str(test_db_path))
+        await service.db.initialize()
 
+        try:
+            task = await service.create_task(
+                file_content=b"placeholder epub bytes",
+                filename="resume_case.epub",
+                bilingual=False,
+            )
+
+            upload_path = Path("data/uploads") / f"{task.task_id}_resume_case.epub"
+            temp_markdown = Path("data/temp") / task.task_id / upload_path.with_suffix(".md").name
+            temp_markdown.parent.mkdir(parents=True, exist_ok=True)
+            temp_markdown.write_text("# Title\n\nbody\n", encoding="utf-8")
+
+            await service.start_translation(task.task_id)
+            saved = await service.get_task(task.task_id)
+            return task.task_id, saved
+        finally:
+            translation_service_module.TranslationEngine = original_engine
+            translation_service_module.DocumentConverter = original_converter
+
+            if task is not None:
                 upload_path = Path("data/uploads") / f"{task.task_id}_resume_case.epub"
-                temp_markdown = Path("data/temp") / task.task_id / upload_path.with_suffix(".md").name
-                temp_markdown.parent.mkdir(parents=True, exist_ok=True)
-                temp_markdown.write_text("# Title\n\nbody\n", encoding="utf-8")
+                result_path = Path("data/results") / f"{task.task_id}.md"
+                temp_task_dir = Path("data/temp") / task.task_id
+                if upload_path.exists():
+                    upload_path.unlink()
+                if result_path.exists():
+                    result_path.unlink()
+                if temp_task_dir.exists():
+                    for child in sorted(temp_task_dir.rglob("*"), reverse=True):
+                        if child.is_file():
+                            child.unlink()
+                        elif child.is_dir():
+                            child.rmdir()
+                    temp_task_dir.rmdir()
+            temp_dir.cleanup()
 
-                await service.start_translation(task.task_id)
-                saved = await service.get_task(task.task_id)
-                return task.task_id, saved
-            finally:
-                translation_service_module.TranslationEngine = original_engine
-                translation_service_module.DocumentConverter = original_converter
+    task_id, saved = asyncio.run(scenario())
 
-                if task is not None:
-                    upload_path = Path("data/uploads") / f"{task.task_id}_resume_case.epub"
-                    result_path = Path("data/results") / f"{task.task_id}.md"
-                    temp_task_dir = Path("data/temp") / task.task_id
-                    if upload_path.exists():
-                        upload_path.unlink()
-                    if result_path.exists():
-                        result_path.unlink()
-                    if temp_task_dir.exists():
-                        for child in sorted(temp_task_dir.rglob("*"), reverse=True):
-                            if child.is_file():
-                                child.unlink()
-                            elif child.is_dir():
-                                child.rmdir()
-                        temp_task_dir.rmdir()
-                temp_dir.cleanup()
-
-        task_id, saved = asyncio.run(scenario())
-
-        self.assertEqual(saved.status.value, "partial_success")
-        self.assertEqual(saved.result_url, f"/api/files/results/{task_id}")
+    assert saved.status.value == "partial_success"
+    assert saved.result_url == f"/api/files/results/{task_id}"

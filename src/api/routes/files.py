@@ -1,16 +1,18 @@
 """
 文件服务 API 路由
 """
+import sys
+from pathlib import Path
+
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
-from pathlib import Path
-import sys
 
 # 添加项目根目录到 Python 路径
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 from src.pipelines.postprocess.export_service import ExportService
-from ..database.db import Database
+
 from ...domain.models.task_models import TaskStatus
+from ..database.db import Database
 
 router = APIRouter(prefix="/api/files", tags=["files"])
 db = Database()

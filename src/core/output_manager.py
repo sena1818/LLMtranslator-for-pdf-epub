@@ -4,7 +4,6 @@
 解决异步并发导致的乱序输出问题
 """
 import asyncio
-import time
 import re
 
 try:
@@ -92,9 +91,9 @@ class OutputManager:
                     while self.next_index in self.buffer:
                         text_to_write = self.buffer[self.next_index]
 
-                        await f.write(f"\n\n")
+                        await f.write("\n\n")
                         await f.write(text_to_write)
-                        await f.write(f"\n\n")
+                        await f.write("\n\n")
 
                         # 清理内存
                         del self.buffer[self.next_index]

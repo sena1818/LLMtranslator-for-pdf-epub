@@ -16,7 +16,6 @@ class TranslationPromptBuilder:
         chunk: TextChunk,
         document_profile: DocumentProfile | None = None,
     ) -> ChatPromptTemplate:
-        profile = document_profile or DocumentProfile.empty()
         template = """你是专业的后现代哲学翻译家,正在翻译学术文本。
 
 【文档分析员备忘】:

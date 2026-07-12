@@ -2,13 +2,19 @@
 FastAPI 应用入口
 """
 import asyncio
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from pathlib import Path
 import logging
 import os
 import sys
+from pathlib import Path
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+
+from ..utils.config_loader import get_config
+from .database.db import Database
+from .routes import files, glossary, translation
+from .worker import TaskWorker
 
 # 配置日志
 logging.basicConfig(
@@ -19,11 +25,6 @@ logging.basicConfig(
         logging.FileHandler("logs/translation.log", encoding='utf-8')
     ]
 )
-
-from .routes import translation, glossary, files
-from .database.db import Database
-from .worker import TaskWorker
-from ..utils.config_loader import get_config
 
 # 创建应用
 app = FastAPI(

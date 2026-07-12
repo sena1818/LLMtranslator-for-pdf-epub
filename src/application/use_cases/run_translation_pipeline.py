@@ -3,8 +3,8 @@
 """
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Awaitable, Callable, Dict, Optional
 
 from ...core.translator import TranslationEngine
 from ...pipelines.translate.document_translation_pipeline import (
@@ -12,14 +12,13 @@ from ...pipelines.translate.document_translation_pipeline import (
     TranslationPipelineOutput,
 )
 
-
-ProgressCallback = Optional[Callable[[dict], Awaitable[None]]]
+ProgressCallback = Callable[[dict], Awaitable[None]] | None
 
 
 class RunTranslationPipeline:
     """供 CLI / Web 共用的应用层翻译用例。"""
 
-    def __init__(self, glossary: Optional[Dict[str, str]] = None, engine_cls=TranslationEngine):
+    def __init__(self, glossary: dict[str, str] | None = None, engine_cls=TranslationEngine):
         self.pipeline = DocumentTranslationPipeline(glossary=glossary or {}, engine_cls=engine_cls)
 
     def plan_chunks(self, text: str):

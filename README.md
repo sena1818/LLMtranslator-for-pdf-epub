@@ -83,9 +83,9 @@ python3 -m unittest discover -s tests -v
 
 ## 📖 详细文档
 
-- [翻译系统使用指南](翻译系统使用指南.md) - 完整的使用说明
-- [格式化工具使用指南](格式化工具使用指南.md) - Markdown 格式化工具文档
-- [本地运行指南](本地运行指南.md) - Web 界面部署指南
+- [翻译系统使用指南](docs/guides/翻译系统使用指南.md) - 完整的使用说明
+- [格式化工具使用指南](docs/guides/格式化工具使用指南.md) - Markdown 格式化工具文档
+- [本地运行指南](docs/guides/本地运行指南.md) - Web 界面部署指南
 - [LangChain / LangGraph 学习地图](LangChain_LangGraph学习地图.md) - 面向本项目的学习路线
 - [CLAUDE.md](CLAUDE.md) - 项目架构和技术细节
 

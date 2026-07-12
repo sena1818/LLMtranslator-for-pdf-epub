@@ -1,5 +1,5 @@
-import re
 import os
+import re
 
 # === 这里填你现在那个 "路径不对" 的 Markdown 文件路径 ===
 INPUT_FILE = "/Users/sena/Desktop/LLMAgent/translator/output_final/CCRU/Ccru_CN_Final.md"
@@ -11,7 +11,7 @@ def fix_paths(text):
     # 寻找任何包含 "/images/" 的路径
     # 比如: /Users/sena/.../images/cover.jpg
     # 替换为: images/cover.jpg
-    
+
     def replacement(match):
         full_path = match.group(2) # 获取括号里的路径
         if "/images/" in full_path:
@@ -26,14 +26,14 @@ def fix_paths(text):
 if __name__ == "__main__":
     if os.path.exists(INPUT_FILE):
         print(f"正在读取: {INPUT_FILE} ...")
-        with open(INPUT_FILE, 'r', encoding='utf-8') as f:
+        with open(INPUT_FILE, encoding='utf-8') as f:
             content = f.read()
-            
+
         new_content = fix_paths(content)
-        
+
         with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
             f.write(new_content)
-            
+
         print(f"✅ 修复完成！\n新文件: {OUTPUT_FILE}")
         print("现在图片路径应该都变成 'images/xxx.jpg' 了。")
     else:

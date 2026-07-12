@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llm-translator"
+version = "0.1.0"
+description = "基于 LLM 的哲学文本翻译系统：PDF/EPUB → 中文 Markdown"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+dependencies = [
+    "langchain-core>=0.3.0",
+    "langchain-openai>=0.2.0",
+    "langchain-google-genai>=2.0.0",
+    "langchain-text-splitters>=0.3.0",
+    "langgraph>=0.2.0",
+    "aiofiles>=24.1.0",
+    "python-dotenv>=1.0.0",
+    "pyyaml>=6.0.1",
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "aiosqlite>=0.19.0",
+    "python-multipart>=0.0.6",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.5",
+]
+
+[project.scripts]
+translate = "translate:main"
+
+[tool.setuptools]
+py-modules = ["translate"]
+
+[tool.setuptools.packages.find]
+include = ["src*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-exclude = ["frontend", "frontend_dist", "design-preview"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = [
+    "E501",  # 行宽由 formatter 约束，中文注释常超限
+]
+
+[tool.ruff.lint.per-file-ignores]
+# FastAPI 依赖注入惯用法：File(...)/Form() 出现在参数默认值
+"src/api/routes/*" = ["B008"]
+# CLI 脚本需要先修改 sys.path 再导入项目模块
+"scripts/*" = ["E402"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["src"]

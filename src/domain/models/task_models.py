@@ -6,7 +6,6 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Optional
 
 
 class TaskStatus(str, Enum):
@@ -40,13 +39,13 @@ class TranslationTask:
     task_id: str
     filename: str
     status: TaskStatus
-    glossary_id: Optional[str] = None
+    glossary_id: str | None = None
     bilingual: bool = False
-    progress: Optional[TaskProgress] = None
-    result_url: Optional[str] = None
-    error: Optional[str] = None
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    progress: TaskProgress | None = None
+    result_url: str | None = None
+    error: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
     def __post_init__(self) -> None:
         if self.progress is None:

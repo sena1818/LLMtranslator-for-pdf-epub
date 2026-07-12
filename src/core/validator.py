@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Dict, List
 
 
 @dataclass
@@ -22,7 +21,7 @@ class QualityReport:
     """质量报告"""
 
     passed: bool
-    issues: List[QualityIssue] = field(default_factory=list)
+    issues: list[QualityIssue] = field(default_factory=list)
 
     @property
     def issue_count(self) -> int:
@@ -58,9 +57,9 @@ class TranslationValidator:
         self,
         original_text: str,
         translation: str,
-        glossary: Dict[str, str],
+        glossary: dict[str, str],
     ) -> QualityReport:
-        issues: List[QualityIssue] = []
+        issues: list[QualityIssue] = []
 
         issues.extend(self._check_untranslated_english(translation))
         issues.extend(self._check_glossary(original_text, translation, glossary))
@@ -81,7 +80,7 @@ class TranslationValidator:
         candidate_score = sum(severity_score[issue.severity] for issue in candidate.issues)
         return candidate_score <= baseline_score
 
-    def _check_untranslated_english(self, translation: str) -> List[QualityIssue]:
+    def _check_untranslated_english(self, translation: str) -> list[QualityIssue]:
         issues = []
         pattern = rf"[A-Za-z]+(?:\s+[A-Za-z]+){{{self.untranslated_word_span - 1},}}"
         match = re.search(pattern, translation)
@@ -99,8 +98,8 @@ class TranslationValidator:
         self,
         original_text: str,
         translation: str,
-        glossary: Dict[str, str],
-    ) -> List[QualityIssue]:
+        glossary: dict[str, str],
+    ) -> list[QualityIssue]:
         issues = []
         checked = 0
 
@@ -128,7 +127,7 @@ class TranslationValidator:
 
         return issues
 
-    def _check_markdown_structure(self, original_text: str, translation: str) -> List[QualityIssue]:
+    def _check_markdown_structure(self, original_text: str, translation: str) -> list[QualityIssue]:
         issues = []
 
         counters = [
@@ -152,7 +151,7 @@ class TranslationValidator:
 
         return issues
 
-    def _check_repetition(self, translation: str) -> List[QualityIssue]:
+    def _check_repetition(self, translation: str) -> list[QualityIssue]:
         issues = []
         if re.search(r"(.{5,30}?)\1{4,}", translation):
             issues.append(

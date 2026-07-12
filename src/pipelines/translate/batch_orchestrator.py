@@ -9,12 +9,12 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, List, Optional
 
 from ...core.chunk_planner import TextChunk
 from ...core.output_manager import OutputManager
-from ...domain.models.translation_models import DocumentProfile, TranslationResult
+from ...domain.models.translation_models import TranslationResult
 
 
 class TranslationBatchOrchestrator:
@@ -26,15 +26,15 @@ class TranslationBatchOrchestrator:
 
     async def run(
         self,
-        chunks: List[TextChunk],
+        chunks: list[TextChunk],
         output_path: Path,
         bilingual: bool,
         progress_callback,
         process_chunk,
-    ) -> List[TranslationResult]:
+    ) -> list[TranslationResult]:
         output_manager = OutputManager(str(output_path), bilingual=bilingual)
         tasks = []
-        results: List[TranslationResult] = []
+        results: list[TranslationResult] = []
 
         for chunk in chunks:
             cache_entry = await self.cache.get(self.build_cache_key(chunk))

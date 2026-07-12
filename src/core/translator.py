@@ -3,26 +3,25 @@
 重构自 scripts/async_translator.py
 """
 import asyncio
+import hashlib
 import logging
 import re
-import hashlib
-from typing import List, Dict, Optional, Callable
+from collections.abc import Callable
+from pathlib import Path
 
-from ..utils.config_loader import get_config
-from ..domain.rules.chunk_planning import ChunkPlanner, TextChunk
-from .output_manager import OutputManager
-from ..infrastructure.llm.rate_limiter import RateLimiter
-from ..infrastructure.cache.translation_cache import TranslationCache
-from .validator import QualityReport, TranslationValidator
 from ..domain.models.translation_models import DocumentProfile, TranslationResult
-from ..pipelines.translate.prompt_builder import TranslationPromptBuilder
+from ..domain.rules.chunk_planning import ChunkPlanner, TextChunk
+from ..infrastructure.cache.translation_cache import TranslationCache
+from ..infrastructure.llm.chat_model_factory import ChatModelFactory
+from ..infrastructure.llm.rate_limiter import RateLimiter
+from ..pipelines.translate.batch_orchestrator import TranslationBatchOrchestrator
 from ..pipelines.translate.document_analyzer import DocumentAnalyzer
+from ..pipelines.translate.prompt_builder import TranslationPromptBuilder
 from ..pipelines.translate.quality_pipeline import TranslationQualityPipeline
 from ..pipelines.translate.translation_client import TranslationClient
-from ..pipelines.translate.batch_orchestrator import TranslationBatchOrchestrator
-from pathlib import Path
-from ..infrastructure.llm.chat_model_factory import ChatModelFactory
-
+from ..utils.config_loader import get_config
+from .output_manager import OutputManager
+from .validator import QualityReport, TranslationValidator
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +29,7 @@ logger = logging.getLogger(__name__)
 class TranslationEngine:
     """异步翻译引擎"""
 
-    def __init__(self, glossary: Dict[str, str] = None):
+    def __init__(self, glossary: dict[str, str] = None):
         """
         初始化翻译引擎
 
@@ -93,11 +92,11 @@ class TranslationEngine:
             build_cache_key=self._build_cache_key,
         )
 
-    def plan_chunks(self, text: str) -> List[TextChunk]:
+    def plan_chunks(self, text: str) -> list[TextChunk]:
         """结构化切块"""
         return self.chunk_planner.plan(text)
 
-    def split_text(self, text: str) -> List[str]:
+    def split_text(self, text: str) -> list[str]:
         """
         智能文本分块
 
@@ -169,7 +168,7 @@ class TranslationEngine:
 
         return text
 
-    def build_prompt(self, chunk: TextChunk, document_profile: Optional[DocumentProfile] = None):
+    def build_prompt(self, chunk: TextChunk, document_profile: DocumentProfile | None = None):
         """
         构建翻译 Prompt
 
@@ -185,7 +184,7 @@ class TranslationEngine:
     async def analyze_document(
         self,
         text: str,
-        chunks: List[TextChunk],
+        chunks: list[TextChunk],
     ) -> DocumentProfile:
         """文档分析 agent：提炼整本文档的风格与术语上下文"""
         return await self.document_analyzer.analyze(text, chunks)
@@ -213,7 +212,7 @@ class TranslationEngine:
     async def translate_chunk(
         self,
         chunk: TextChunk,
-        progress_callback: Optional[Callable] = None
+        progress_callback: Callable | None = None
     ) -> TranslationResult:
         """
         翻译单个文本块
@@ -317,10 +316,10 @@ class TranslationEngine:
         self,
         text: str,
         output_path: Path,
-        progress_callback: Optional[Callable] = None,
+        progress_callback: Callable | None = None,
         bilingual: bool = False,
-        prepared_chunks: Optional[List[TextChunk]] = None,
-    ) -> List[TranslationResult]:
+        prepared_chunks: list[TextChunk] | None = None,
+    ) -> list[TranslationResult]:
         """
         批量翻译完整文本
 
@@ -360,7 +359,7 @@ class TranslationEngine:
         self,
         chunk: TextChunk,
         output_manager: OutputManager,
-        callback: Optional[Callable]
+        callback: Callable | None
     ) -> TranslationResult:
         """单块处理(信号量控制)"""
         async with self.semaphore:

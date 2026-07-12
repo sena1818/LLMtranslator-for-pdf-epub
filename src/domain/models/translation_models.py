@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
-from typing import List, Optional
 
 
 @dataclass
@@ -13,12 +12,12 @@ class DocumentProfile:
     """文档分析 agent 产出的全局上下文"""
 
     summary: str = ""
-    style_notes: List[str] = field(default_factory=list)
-    terminology_hints: List[str] = field(default_factory=list)
-    section_overview: List[str] = field(default_factory=list)
+    style_notes: list[str] = field(default_factory=list)
+    terminology_hints: list[str] = field(default_factory=list)
+    section_overview: list[str] = field(default_factory=list)
 
     @classmethod
-    def empty(cls) -> "DocumentProfile":
+    def empty(cls) -> DocumentProfile:
         return cls()
 
     @property
@@ -60,7 +59,7 @@ class TranslationResult:
     retry_count: int = 0
     duration: float = 0.0
     chunk_id: str = ""
-    quality_report: Optional[dict] = None
+    quality_report: dict | None = None
     repaired: bool = False
     cached: bool = False
 

@@ -6,10 +6,9 @@ LangChain 兼容层
 """
 from __future__ import annotations
 
-
 try:
-    from langchain_core.prompts import ChatPromptTemplate as _ChatPromptTemplate
     from langchain_core.output_parsers import StrOutputParser as _StrOutputParser
+    from langchain_core.prompts import ChatPromptTemplate as _ChatPromptTemplate
 
     ChatPromptTemplate = _ChatPromptTemplate
     StrOutputParser = _StrOutputParser
@@ -32,7 +31,7 @@ except ImportError:  # pragma: no cover - 仅在瘦测试环境下生效
             self.template = template
 
         @classmethod
-        def from_template(cls, template: str) -> "ChatPromptTemplate":
+        def from_template(cls, template: str) -> ChatPromptTemplate:
             return cls(template)
 
         def format(self, **kwargs) -> str:

@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.services.markdown_formatter import SmartMarkdownFormatter
+from src.pipelines.postprocess.markdown_formatter import SmartMarkdownFormatter
 
 
 def main():
@@ -59,7 +59,7 @@ def main():
 
     print(f"📖 读取文件: {input_file}")
     try:
-        with open(input_file, "r", encoding="utf-8") as file:
+        with open(input_file, encoding="utf-8") as file:
             content = file.read()
     except Exception as exc:
         print(f"❌ 读取失败: {exc}")

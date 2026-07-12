@@ -1,13 +1,10 @@
-import unittest
-
-from src.services.epub_artifact_cleaner import EpubArtifactCleaner
-from src.services.markdown_formatter import SmartMarkdownFormatter
+from src.pipelines.postprocess.markdown_formatter import SmartMarkdownFormatter
+from src.pipelines.preprocess.artifact_cleaner import EpubArtifactCleaner
 
 
-class EpubArtifactCleanerTestCase(unittest.TestCase):
-    def test_cleaner_removes_pagebreaks_and_normalizes_spans_and_images(self):
-        cleaner = EpubArtifactCleaner()
-        content = """::: {#index_split_002.html_calibre_pb_2 .mbp_pagebreak}
+def test_cleaner_removes_pagebreaks_and_normalizes_spans_and_images():
+    cleaner = EpubArtifactCleaner()
+    content = """::: {#index_split_002.html_calibre_pb_2 .mbp_pagebreak}
 :::
 
 [第一篇章]{.calibre2}
@@ -19,22 +16,23 @@ class EpubArtifactCleanerTestCase(unittest.TestCase):
 []{#index_split_003.html}
 """
 
-        cleaned = cleaner.clean(content)
+    cleaned = cleaner.clean(content)
 
-        self.assertNotIn("mbp_pagebreak", cleaned)
-        self.assertNotIn("[]{#index_split_003.html}", cleaned)
-        self.assertIn("## 第一篇章", cleaned)
-        self.assertIn("## 同一（性）", cleaned)
-        self.assertIn("![00005](images/00005.jpg)", cleaned)
+    assert "mbp_pagebreak" not in cleaned
+    assert "[]{#index_split_003.html}" not in cleaned
+    assert "## 第一篇章" in cleaned
+    assert "## 同一（性）" in cleaned
+    assert "![00005](images/00005.jpg)" in cleaned
 
-    def test_cleaner_handles_bilingual_quote_artifacts(self):
-        cleaner = EpubArtifactCleaner()
-        content = r"""> ::: {#index_split_002.html_calibre_pb_2 .mbp_pagebreak}
+
+def test_cleaner_handles_bilingual_quote_artifacts():
+    cleaner = EpubArtifactCleaner()
+    content = r"""> ::: {#index_split_002.html_calibre_pb_2 .mbp_pagebreak}
 > :::
 >
 > [Foreword]
 >
-> [ ]
+> [ ]
 >
 > ![](data/temp/task/images/images/00005.jpg)
 > {.calibre_2}
@@ -46,18 +44,19 @@ class EpubArtifactCleanerTestCase(unittest.TestCase):
 > </svg>
 """
 
-        cleaned = cleaner.clean(content)
+    cleaned = cleaner.clean(content)
 
-        self.assertNotIn("mbp_pagebreak", cleaned)
-        self.assertNotIn("[\u00a0]", cleaned)
-        self.assertNotIn("<svg", cleaned)
-        self.assertIn("> Foreword", cleaned)
-        self.assertIn("> ![00005](images/00005.jpg)", cleaned)
-        self.assertIn("> 1) First item", cleaned)
+    assert "mbp_pagebreak" not in cleaned
+    assert "[ ]" not in cleaned
+    assert "<svg" not in cleaned
+    assert "> Foreword" in cleaned
+    assert "> ![00005](images/00005.jpg)" in cleaned
+    assert "> 1) First item" in cleaned
 
-    def test_formatter_cleans_epub_residue_end_to_end(self):
-        formatter = SmartMarkdownFormatter()
-        content = """::: {#index_split_002.html_calibre_pb_2 .mbp_pagebreak}
+
+def test_formatter_cleans_epub_residue_end_to_end():
+    formatter = SmartMarkdownFormatter()
+    content = """::: {#index_split_002.html_calibre_pb_2 .mbp_pagebreak}
 :::
 
 [第一篇章]{.calibre2}
@@ -66,68 +65,71 @@ class EpubArtifactCleanerTestCase(unittest.TestCase):
 {.calibre_2}
 """
 
-        formatted = formatter.format(content)
+    formatted = formatter.format(content)
 
-        self.assertNotIn("mbp_pagebreak", formatted)
-        self.assertIn("## 第一篇章", formatted)
-        self.assertIn("![00005](images/00005.jpg)", formatted)
+    assert "mbp_pagebreak" not in formatted
+    assert "## 第一篇章" in formatted
+    assert "![00005](images/00005.jpg)" in formatted
 
-    def test_cleaner_supports_source_specific_rules(self):
-        cleaner = EpubArtifactCleaner()
-        content = """[]{#kindlepos123}
+
+def test_cleaner_supports_source_specific_rules():
+    cleaner = EpubArtifactCleaner()
+    content = """[]{#kindlepos123}
 []{#filepos456}
 [Chapter One]{.calibre3}
 """
 
-        cleaned = cleaner.clean(content, source_type="kindle")
+    cleaned = cleaner.clean(content, source_type="kindle")
 
-        self.assertNotIn("kindlepos", cleaned)
-        self.assertNotIn("filepos", cleaned)
-        self.assertIn("### Chapter One", cleaned)
+    assert "kindlepos" not in cleaned
+    assert "filepos" not in cleaned
+    assert "### Chapter One" in cleaned
 
-    def test_cleaner_unwraps_nested_calibre_spans(self):
-        cleaner = EpubArtifactCleaner()
-        content = r"""[[NICK]{.calibre_1}]{.calibre1}[ ]{.calibre_1}[[LAND]{.calibre_1}]{.calibre1}
+
+def test_cleaner_unwraps_nested_calibre_spans():
+    cleaner = EpubArtifactCleaner()
+    content = r"""[[NICK]{.calibre_1}]{.calibre1}[ ]{.calibre_1}[[LAND]{.calibre_1}]{.calibre1}
 [[*]{.calibre_9}]{.calibre2}
 [[[Edited By]{.calibre_1}]{.italic}]{.calibre2}
 [[Fanged Noumena]{.calibre_1}]{.calibre3}
 """
 
-        cleaned = cleaner.clean(content, source_type="epub")
+    cleaned = cleaner.clean(content, source_type="epub")
 
-        self.assertIn("NICK LAND", cleaned)
-        self.assertNotIn("[[*]{.calibre_9}]{.calibre2}", cleaned)
-        self.assertNotIn("\n*\n", f"\n{cleaned}\n")
-        self.assertIn("## *Edited By*", cleaned)
-        self.assertIn("### Fanged Noumena", cleaned)
+    assert "NICK LAND" in cleaned
+    assert "[[*]{.calibre_9}]{.calibre2}" not in cleaned
+    assert "\n*\n" not in f"\n{cleaned}\n"
+    assert "## *Edited By*" in cleaned
+    assert "### Fanged Noumena" in cleaned
 
-    def test_cleaner_unwraps_long_calibre_line_with_nested_footnote(self):
-        cleaner = EpubArtifactCleaner()
-        content = (
-            "> [Following Deleuze,^[[3](#index_split_004.html_filepos114207)]{.small}^ "
-            "Land refuses the marginalizing of aesthetics.]{.calibre_1}\n"
-            "> > > >\n"
-        )
 
-        cleaned = cleaner.clean(content, source_type="epub")
+def test_cleaner_unwraps_long_calibre_line_with_nested_footnote():
+    cleaner = EpubArtifactCleaner()
+    content = (
+        "> [Following Deleuze,^[[3](#index_split_004.html_filepos114207)]{.small}^ "
+        "Land refuses the marginalizing of aesthetics.]{.calibre_1}\n"
+        "> > > >\n"
+    )
 
-        self.assertIn(
-            "> Following Deleuze,^[3](#index_split_004.html_filepos114207)^ "
-            "Land refuses the marginalizing of aesthetics.",
-            cleaned,
-        )
-        self.assertNotIn("]{.calibre_1}", cleaned)
-        self.assertNotIn("> > > >", cleaned)
+    cleaned = cleaner.clean(content, source_type="epub")
 
-    def test_cleaner_strips_inline_class_suffixes(self):
-        cleaner = EpubArtifactCleaner()
-        content = (
-            "第一部 分]{.calibre6}：]{.calibre6}狼群\n"
-            "这种批判的情动再物质化将追问重构为]{.calibre_1}*勘探*\n"
-        )
+    assert (
+        "> Following Deleuze,^[3](#index_split_004.html_filepos114207)^ "
+        "Land refuses the marginalizing of aesthetics."
+    ) in cleaned
+    assert "]{.calibre_1}" not in cleaned
+    assert "> > > >" not in cleaned
 
-        cleaned = cleaner.clean(content, source_type="epub")
 
-        self.assertIn("第一部 分：狼群", cleaned)
-        self.assertIn("这种批判的情动再物质化将追问重构为*勘探*", cleaned)
-        self.assertNotIn("]{.calibre6}", cleaned)
+def test_cleaner_strips_inline_class_suffixes():
+    cleaner = EpubArtifactCleaner()
+    content = (
+        "第一部 分]{.calibre6}：]{.calibre6}狼群\n"
+        "这种批判的情动再物质化将追问重构为]{.calibre_1}*勘探*\n"
+    )
+
+    cleaned = cleaner.clean(content, source_type="epub")
+
+    assert "第一部 分：狼群" in cleaned
+    assert "这种批判的情动再物质化将追问重构为*勘探*" in cleaned
+    assert "]{.calibre6}" not in cleaned

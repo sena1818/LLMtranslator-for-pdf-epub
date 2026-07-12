@@ -3,16 +3,14 @@
 """
 from __future__ import annotations
 
+import json
 import logging
 import re
-import json
-from typing import List
 
 from ...core.chunk_planner import TextChunk
 from ...domain.models.translation_models import DocumentProfile
 from .langchain_compat import StrOutputParser
 from .prompt_builder import TranslationPromptBuilder
-
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +23,7 @@ class DocumentAnalyzer:
         self.config = config
         self.prompt_builder = prompt_builder
 
-    async def analyze(self, text: str, chunks: List[TextChunk]) -> DocumentProfile:
+    async def analyze(self, text: str, chunks: list[TextChunk]) -> DocumentProfile:
         if not getattr(self.config, "multi_agent_enabled", False):
             return DocumentProfile.empty()
 

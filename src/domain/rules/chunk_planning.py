@@ -8,7 +8,6 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass
-from typing import List, Optional
 
 
 @dataclass
@@ -16,7 +15,7 @@ class TextBlock:
     """Markdown 结构块"""
 
     text: str
-    section_path: List[str]
+    section_path: list[str]
     is_heading: bool = False
 
 
@@ -27,7 +26,7 @@ class TextChunk:
     index: int
     chunk_id: str
     text: str
-    section_path: List[str]
+    section_path: list[str]
     section_title: str
     context_text: str
 
@@ -39,20 +38,20 @@ class ChunkPlanner:
         self,
         chunk_size: int = 3600,
         context_window: int = 1400,
-        target_chunk_size: Optional[int] = None,
-        min_chunk_size: Optional[int] = None,
+        target_chunk_size: int | None = None,
+        min_chunk_size: int | None = None,
     ):
         self.chunk_size = chunk_size
         self.context_window = context_window
         self.target_chunk_size = min(target_chunk_size or int(chunk_size * 0.9), chunk_size)
         self.min_chunk_size = min_chunk_size or max(600, int(self.target_chunk_size * 0.4))
 
-    def plan(self, text: str) -> List[TextChunk]:
+    def plan(self, text: str) -> list[TextChunk]:
         """将完整文档切成结构化 chunk"""
         blocks = self._extract_blocks(text)
         raw_chunks = self._merge_short_chunks(self._pack_blocks(blocks))
 
-        chunks: List[TextChunk] = []
+        chunks: list[TextChunk] = []
         previous_text = ""
         previous_section_title = ""
 
@@ -81,11 +80,11 @@ class ChunkPlanner:
 
         return chunks
 
-    def _extract_blocks(self, text: str) -> List[TextBlock]:
+    def _extract_blocks(self, text: str) -> list[TextBlock]:
         lines = text.splitlines()
-        blocks: List[TextBlock] = []
-        heading_stack: List[str] = []
-        buffer: List[str] = []
+        blocks: list[TextBlock] = []
+        heading_stack: list[str] = []
+        buffer: list[str] = []
         in_code_fence = False
 
         def flush_buffer():
@@ -138,10 +137,10 @@ class ChunkPlanner:
         flush_buffer()
         return blocks
 
-    def _pack_blocks(self, blocks: List[TextBlock]) -> List[dict]:
-        raw_chunks: List[dict] = []
-        current_lines: List[str] = []
-        current_section_path: Optional[List[str]] = None
+    def _pack_blocks(self, blocks: list[TextBlock]) -> list[dict]:
+        raw_chunks: list[dict] = []
+        current_lines: list[str] = []
+        current_section_path: list[str] | None = None
 
         def flush_chunk():
             nonlocal current_lines, current_section_path
@@ -186,11 +185,11 @@ class ChunkPlanner:
         flush_chunk()
         return raw_chunks
 
-    def _merge_short_chunks(self, raw_chunks: List[dict]) -> List[dict]:
+    def _merge_short_chunks(self, raw_chunks: list[dict]) -> list[dict]:
         if not raw_chunks:
             return raw_chunks
 
-        merged: List[dict] = []
+        merged: list[dict] = []
         for chunk in raw_chunks:
             if not merged:
                 merged.append(chunk)
@@ -218,12 +217,12 @@ class ChunkPlanner:
 
         return merged
 
-    def _split_oversized_block(self, text: str) -> List[str]:
+    def _split_oversized_block(self, text: str) -> list[str]:
         separators = ["\n\n", "\n", "。", "！", "？", ". ", "! ", "? ", " "]
         pieces = [text]
 
         for separator in separators:
-            next_pieces: List[str] = []
+            next_pieces: list[str] = []
             changed = False
             for piece in pieces:
                 if len(piece) <= self.chunk_size:
@@ -251,7 +250,7 @@ class ChunkPlanner:
             if changed and all(len(piece) <= self.chunk_size for piece in pieces):
                 return pieces
 
-        final_pieces: List[str] = []
+        final_pieces: list[str] = []
         for piece in pieces:
             if len(piece) <= self.chunk_size:
                 final_pieces.append(piece)
@@ -264,10 +263,10 @@ class ChunkPlanner:
     def _build_context(
         self,
         previous_text: str,
-        section_path: List[str],
+        section_path: list[str],
         previous_section_title: str,
     ) -> str:
-        parts: List[str] = []
+        parts: list[str] = []
 
         if section_path:
             parts.append("当前章节: " + " > ".join(section_path))
@@ -280,7 +279,7 @@ class ChunkPlanner:
 
         return "\n\n".join(parts).strip()
 
-    def _build_chunk_id(self, index: int, section_path: List[str], text: str) -> str:
-        payload = f"{index}|{' > '.join(section_path)}|{text}".encode("utf-8")
+    def _build_chunk_id(self, index: int, section_path: list[str], text: str) -> str:
+        payload = f"{index}|{' > '.join(section_path)}|{text}".encode()
         digest = hashlib.sha1(payload).hexdigest()[:12]
         return f"chunk-{index:04d}-{digest}"

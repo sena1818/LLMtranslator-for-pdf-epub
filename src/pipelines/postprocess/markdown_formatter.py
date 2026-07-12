@@ -9,7 +9,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List
 
 from ..preprocess.artifact_cleaner import EpubArtifactCleaner
 
@@ -19,7 +18,7 @@ class BlockNode:
     """块级节点"""
 
     kind: str
-    lines: List[str] = field(default_factory=list)
+    lines: list[str] = field(default_factory=list)
     meta: dict = field(default_factory=dict)
 
 
@@ -49,10 +48,10 @@ class SmartMarkdownFormatter:
         self.stats["book_formatting_enhanced"] = 1
         return rendered.strip() + "\n"
 
-    def parse_blocks(self, text: str) -> List[BlockNode]:
+    def parse_blocks(self, text: str) -> list[BlockNode]:
         """将 Markdown 文本解析为块级节点"""
         lines = text.splitlines()
-        nodes: List[BlockNode] = []
+        nodes: list[BlockNode] = []
         index = 0
 
         while index < len(lines):
@@ -89,9 +88,9 @@ class SmartMarkdownFormatter:
 
         return nodes
 
-    def render_blocks(self, nodes: List[BlockNode]) -> str:
+    def render_blocks(self, nodes: list[BlockNode]) -> str:
         """将节点重新渲染为 Markdown"""
-        rendered_nodes: List[str] = []
+        rendered_nodes: list[str] = []
 
         for node in nodes:
             if node.kind == "blank":
@@ -173,7 +172,7 @@ class SmartMarkdownFormatter:
     def clean_inline(self, text: str) -> str:
         """清理非代码块的内联标记"""
         segments = re.split(r"(`[^`\n]+`)", text)
-        cleaned_segments: List[str] = []
+        cleaned_segments: list[str] = []
 
         for segment in segments:
             if not segment:
@@ -251,7 +250,7 @@ class SmartMarkdownFormatter:
         text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)\{[^}]+\}", r"[\1](\2)", text)
         return text
 
-    def _clean_toc_lines(self, lines: List[str]) -> List[str]:
+    def _clean_toc_lines(self, lines: list[str]) -> list[str]:
         cleaned = []
         for line in lines:
             stripped = line.strip()
@@ -290,15 +289,15 @@ class SmartMarkdownFormatter:
         print(f"  - 代码块保留: {self.stats['code_blocks_preserved']}")
         print(f"  - 书籍排版优化: {'是' if self.stats['book_formatting_enhanced'] else '否'}")
 
-    def _append_with_padding(self, rendered_nodes: List[str], block_text: str) -> List[str]:
-        parts: List[str] = []
+    def _append_with_padding(self, rendered_nodes: list[str], block_text: str) -> list[str]:
+        parts: list[str] = []
         if rendered_nodes and rendered_nodes[-1] != "":
             parts.append("")
         parts.append(block_text)
         parts.append("")
         return parts
 
-    def _consume_fence(self, lines: List[str], index: int) -> tuple[BlockNode, int]:
+    def _consume_fence(self, lines: list[str], index: int) -> tuple[BlockNode, int]:
         fence_lines = [lines[index]]
         index += 1
         while index < len(lines):
@@ -309,7 +308,7 @@ class SmartMarkdownFormatter:
             index += 1
         return BlockNode(kind="fence", lines=fence_lines), index
 
-    def _consume_div(self, lines: List[str], index: int) -> tuple[BlockNode, int]:
+    def _consume_div(self, lines: list[str], index: int) -> tuple[BlockNode, int]:
         opening = lines[index].strip()
         div_type = opening.replace(":::", "", 1).strip().strip("{}").strip().lower()
         if div_type.startswith("."):
@@ -317,7 +316,7 @@ class SmartMarkdownFormatter:
         if " " in div_type:
             div_type = div_type.split()[0]
 
-        body: List[str] = []
+        body: list[str] = []
         index += 1
         while index < len(lines):
             if re.match(r"^:::\s*$", lines[index].strip()):
@@ -327,8 +326,8 @@ class SmartMarkdownFormatter:
             index += 1
         return BlockNode(kind="div", lines=body, meta={"div_type": div_type}), index
 
-    def _consume_list(self, lines: List[str], index: int) -> tuple[BlockNode, int]:
-        items: List[str] = []
+    def _consume_list(self, lines: list[str], index: int) -> tuple[BlockNode, int]:
+        items: list[str] = []
         while index < len(lines):
             line = lines[index]
             stripped = line.strip()
@@ -340,8 +339,8 @@ class SmartMarkdownFormatter:
             index += 1
         return BlockNode(kind="list", lines=items), index
 
-    def _consume_paragraph(self, lines: List[str], index: int) -> tuple[BlockNode, int]:
-        paragraph_lines: List[str] = []
+    def _consume_paragraph(self, lines: list[str], index: int) -> tuple[BlockNode, int]:
+        paragraph_lines: list[str] = []
         while index < len(lines):
             line = lines[index]
             stripped = line.strip()

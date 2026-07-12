@@ -2,11 +2,10 @@
 SQLite 数据库管理
 """
 import sqlite3
-from pathlib import Path
-from typing import Optional, List, Tuple
 from datetime import datetime, timedelta
+from pathlib import Path
 
-from ...domain.models.task_models import TranslationTask, TaskStatus, TaskProgress
+from ...domain.models.task_models import TaskProgress, TaskStatus, TranslationTask
 
 try:
     import aiosqlite
@@ -219,7 +218,7 @@ class Database:
             ))
             await db.commit()
 
-    async def get_task(self, task_id: str) -> Optional[TranslationTask]:
+    async def get_task(self, task_id: str) -> TranslationTask | None:
         """获取任务"""
         if aiosqlite is None:
             with self._connect_sync() as db:
@@ -238,7 +237,7 @@ class Database:
 
                 return self._row_to_task(row)
 
-    async def list_tasks(self, skip: int = 0, limit: int = 20) -> Tuple[List[TranslationTask], int]:
+    async def list_tasks(self, skip: int = 0, limit: int = 20) -> tuple[list[TranslationTask], int]:
         """获取任务列表"""
         if aiosqlite is None:
             with self._connect_sync() as db:
@@ -282,7 +281,7 @@ class Database:
             await db.commit()
             return cursor.rowcount > 0
 
-    async def claim_next_pending_task(self) -> Optional[TranslationTask]:
+    async def claim_next_pending_task(self) -> TranslationTask | None:
         """原子认领下一个待处理任务"""
         if aiosqlite is None:
             with self._connect_sync() as db:
