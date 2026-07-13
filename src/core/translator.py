@@ -15,6 +15,7 @@ from ..infrastructure.cache.translation_cache import TranslationCache
 from ..infrastructure.llm.chat_model_factory import ChatModelFactory
 from ..infrastructure.llm.rate_limiter import RateLimiter
 from ..pipelines.translate.batch_orchestrator import TranslationBatchOrchestrator
+from ..pipelines.translate.chunk_processing import build_cached_result, cached_progress_event
 from ..pipelines.translate.document_analyzer import DocumentAnalyzer
 from ..pipelines.translate.prompt_builder import TranslationPromptBuilder
 from ..pipelines.translate.quality_pipeline import TranslationQualityPipeline
@@ -345,7 +346,15 @@ class TranslationEngine:
         chunks = prepared_chunks or self.plan_chunks(text)
 
         if getattr(self, "engine_name", "native") == "langgraph":
-            raise NotImplementedError("langgraph 引擎尚未实现")
+            from ..pipelines.translate.graph_engine import LangGraphTranslationOrchestrator
+
+            return await LangGraphTranslationOrchestrator(self).run(
+                text=text,
+                chunks=chunks,
+                output_path=output_path,
+                bilingual=bilingual,
+                progress_callback=progress_callback,
+            )
 
         # native：手写 asyncio 编排（分析员 → 并发 fan-out → 顺序写盘）
         await self._prepare_document(text, chunks, progress_callback)
@@ -395,3 +404,37 @@ class TranslationEngine:
             )
 
             return result
+
+    async def _translate_and_emit(
+        self,
+        chunk: TextChunk,
+        output_manager: OutputManager,
+        progress_callback: Callable | None,
+    ) -> TranslationResult:
+        """单块完整处理：缓存命中或实时翻译，随后按序写盘。
+
+        与 native 的「batch_orchestrator 缓存分支 + _process_one_chunk 实时分支」
+        逐字段等价；langgraph 引擎的每个 Send 分支复用它，保证两引擎产出一致。
+        并发上限由调用方控制（native 用 Semaphore，langgraph 用图的 max_concurrency）。
+        """
+        cache_entry = await self.cache.get(self._build_cache_key(chunk))
+        if cache_entry is not None:
+            result = build_cached_result(chunk, cache_entry)
+            await output_manager.add_result(
+                index=result.chunk_index,
+                content=result.translation,
+                success=True,
+                original_text=chunk.text,
+            )
+            if progress_callback:
+                await progress_callback(cached_progress_event(chunk, cache_entry))
+            return result
+
+        result = await self.translate_chunk(chunk, progress_callback)
+        await output_manager.add_result(
+            index=result.chunk_index,
+            content=result.translation,
+            success=result.success,
+            original_text=result.original,
+        )
+        return result

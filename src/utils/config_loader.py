@@ -240,7 +240,7 @@ class Config:
     @property
     def engine(self) -> str:
         """编排引擎：langgraph（文档级 StateGraph）或 native（手写 asyncio）。见 ADR-0001。"""
-        return str(self.get("multi_agent.engine", "native")).lower()
+        return str(self.get("multi_agent.engine", "langgraph")).lower()
 
     @property
     def analyst_temperature(self) -> float:
