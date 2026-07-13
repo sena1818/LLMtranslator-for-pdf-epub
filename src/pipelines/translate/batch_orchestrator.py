@@ -15,6 +15,7 @@ from pathlib import Path
 from ...core.chunk_planner import TextChunk
 from ...core.output_manager import OutputManager
 from ...domain.models.translation_models import TranslationResult
+from .chunk_processing import build_cached_result, cached_progress_event
 
 
 class TranslationBatchOrchestrator:
@@ -39,18 +40,7 @@ class TranslationBatchOrchestrator:
         for chunk in chunks:
             cache_entry = await self.cache.get(self.build_cache_key(chunk))
             if cache_entry:
-                cached_result = TranslationResult(
-                    chunk_index=chunk.index,
-                    original=chunk.text,
-                    translation=cache_entry.translation,
-                    success=True,
-                    retry_count=0,
-                    duration=0.0,
-                    chunk_id=chunk.chunk_id,
-                    quality_report=cache_entry.quality_report,
-                    repaired=cache_entry.repaired,
-                    cached=True,
-                )
+                cached_result = build_cached_result(chunk, cache_entry)
                 await output_manager.add_result(
                     index=cached_result.chunk_index,
                     content=cached_result.translation,
@@ -58,18 +48,7 @@ class TranslationBatchOrchestrator:
                     original_text=chunk.text,
                 )
                 if progress_callback:
-                    await progress_callback(
-                        {
-                            "chunk_index": chunk.index,
-                            "chunk_id": chunk.chunk_id,
-                            "status": "completed",
-                            "translation": cache_entry.translation,
-                            "duration": 0.0,
-                            "quality_report": cache_entry.quality_report,
-                            "repaired": cache_entry.repaired,
-                            "cached": True,
-                        }
-                    )
+                    await progress_callback(cached_progress_event(chunk, cache_entry))
                 results.append(cached_result)
                 continue
 

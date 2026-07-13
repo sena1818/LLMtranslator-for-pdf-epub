@@ -29,17 +29,26 @@ logger = logging.getLogger(__name__)
 class TranslationEngine:
     """异步翻译引擎"""
 
-    def __init__(self, glossary: dict[str, str] = None):
+    def __init__(
+        self,
+        glossary: dict[str, str] = None,
+        model_factory=None,
+        engine: str | None = None,
+        cache: TranslationCache | None = None,
+    ):
         """
         初始化翻译引擎
 
         Args:
             glossary: 术语表字典
+            model_factory: 聊天模型工厂，默认真实 ChatModelFactory；测试可注入符合 Runnable 协议的假 LLM
+            engine: 编排引擎（langgraph | native），默认取配置 multi_agent.engine
+            cache: chunk 翻译缓存，默认指向 data/translation_cache.db；测试可注入隔离缓存
         """
         self.config = get_config()
         self.glossary = glossary or {}
 
-        model_factory = ChatModelFactory(self.config)
+        model_factory = model_factory or ChatModelFactory(self.config)
         self.llm_translator = model_factory.create_translator()
         self.llm_checker = model_factory.create_checker()
         self.llm_analyst = model_factory.create_analyst()
@@ -61,7 +70,7 @@ class TranslationEngine:
             untranslated_word_span=self.config.untranslated_word_span,
             max_glossary_checks=self.config.max_glossary_checks,
         )
-        self.cache = TranslationCache(self.config.root_dir / "data" / "translation_cache.db")
+        self.cache = cache or TranslationCache(self.config.root_dir / "data" / "translation_cache.db")
         self.document_profile = DocumentProfile.empty()
         self.prompt_version = "v3"
         self.prompt_builder = TranslationPromptBuilder()
@@ -91,6 +100,7 @@ class TranslationEngine:
             cache=self.cache,
             build_cache_key=self._build_cache_key,
         )
+        self.engine_name = (engine or self.config.engine or "native").lower()
 
     def plan_chunks(self, text: str) -> list[TextChunk]:
         """结构化切块"""
@@ -332,9 +342,28 @@ class TranslationEngine:
         Returns:
             翻译结果列表
         """
-        # 1. 文本分块
         chunks = prepared_chunks or self.plan_chunks(text)
-        total = len(chunks)
+
+        if getattr(self, "engine_name", "native") == "langgraph":
+            raise NotImplementedError("langgraph 引擎尚未实现")
+
+        # native：手写 asyncio 编排（分析员 → 并发 fan-out → 顺序写盘）
+        await self._prepare_document(text, chunks, progress_callback)
+        return await self.batch_orchestrator.run(
+            chunks=chunks,
+            output_path=output_path,
+            bilingual=bilingual,
+            progress_callback=progress_callback,
+            process_chunk=self._process_one_chunk,
+        )
+
+    async def _prepare_document(
+        self,
+        text: str,
+        chunks: list[TextChunk],
+        progress_callback: Callable | None,
+    ) -> None:
+        """文档级准备：运行分析员、初始化缓存、上报分块完成事件。两引擎共用。"""
         if hasattr(self, "analyze_document"):
             self.document_profile = await self.analyze_document(text, chunks)
         else:
@@ -344,16 +373,8 @@ class TranslationEngine:
         if progress_callback:
             await progress_callback({
                 "event": "split_completed",
-                "total_chunks": total
+                "total_chunks": len(chunks),
             })
-
-        return await self.batch_orchestrator.run(
-            chunks=chunks,
-            output_path=output_path,
-            bilingual=bilingual,
-            progress_callback=progress_callback,
-            process_chunk=self._process_one_chunk,
-        )
 
     async def _process_one_chunk(
         self,
