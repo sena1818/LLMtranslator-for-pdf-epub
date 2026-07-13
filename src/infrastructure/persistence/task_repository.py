@@ -35,6 +35,9 @@ class TaskRepository:
     async def delete(self, task_id: str) -> bool:
         return await self.db.delete_task(task_id)
 
+    async def cancel(self, task_id: str) -> bool:
+        return await self.db.cancel_task(task_id)
+
     async def claim_next_pending(self) -> TranslationTask | None:
         return await self.db.claim_next_pending_task()
 

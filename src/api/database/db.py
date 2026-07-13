@@ -405,6 +405,37 @@ class Database:
             await db.commit()
             return cursor.rowcount
 
+    async def cancel_task(self, task_id: str) -> bool:
+        """将 pending/processing 任务标记为 cancelled（守卫式，终态任务不受影响）。
+
+        返回是否发生了状态变更。原子的 WHERE 条件保证并发下不会重复取消，
+        也不会覆盖已进入终态（completed/partial_success/failed/cancelled）的任务。
+        """
+        cancellable = (TaskStatus.PENDING.value, TaskStatus.PROCESSING.value)
+        now = datetime.now().isoformat()
+        params = (
+            TaskStatus.CANCELLED.value,
+            "任务已被取消",
+            now,
+            task_id,
+            *cancellable,
+        )
+        sql = """
+            UPDATE tasks
+            SET status = ?, error = ?, updated_at = ?
+            WHERE task_id = ? AND status IN (?, ?)
+        """
+        if aiosqlite is None:
+            with self._connect_sync() as db:
+                cursor = db.execute(sql, params)
+                db.commit()
+                return cursor.rowcount > 0
+
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(sql, params)
+            await db.commit()
+            return cursor.rowcount > 0
+
     def _row_to_task(self, row) -> TranslationTask:
         """数据库行转任务对象"""
         return TranslationTask(

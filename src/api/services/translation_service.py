@@ -171,9 +171,16 @@ class TranslationService:
 
             # 8. 定义进度回调
             start_time = asyncio.get_event_loop().time()
+            cancelled = {"flag": False}
 
             async def progress_callback(event: dict):
                 if event.get("status") in {"completed", "failed"}:
+                    # 协作式取消：外部（Web/MCP）将任务置为 cancelled 后，
+                    # 停止推进进度与状态写入，避免把 cancelled 覆盖回 processing。
+                    if cancelled["flag"] or await self._task_is_cancelled(task_id):
+                        cancelled["flag"] = True
+                        return
+
                     task.progress.current += 1
                     elapsed = asyncio.get_event_loop().time() - start_time
                     task.progress.elapsed = elapsed
@@ -203,6 +210,11 @@ class TranslationService:
                 prepared_chunks=chunks,
             )
             results = pipeline_output.results
+
+            # 若翻译过程中任务被取消，跳过结果落盘与终态写入，保持 cancelled 状态
+            if cancelled["flag"] or await self._task_is_cancelled(task_id):
+                logger.info(f"🛑 任务已取消，跳过结果写入: {task_id}")
+                return
 
             self._write_result_markdown(
                 output_path=mono_output_path,
@@ -272,6 +284,10 @@ class TranslationService:
             )
 
         except Exception as e:
+            # 取消导致的异常不应覆盖 cancelled 终态
+            if await self._task_is_cancelled(task_id):
+                logger.info(f"🛑 任务在取消后抛出异常，保持 cancelled 状态: {task_id}")
+                return
             # 标记失败
             logger.error(f"❌ 任务失败: {str(e)}")
             task.status = TaskStatus.FAILED
@@ -330,6 +346,110 @@ class TranslationService:
                 f.write("\n\n")
                 f.write(content)
                 f.write("\n\n")
+
+    async def _task_is_cancelled(self, task_id: str) -> bool:
+        """读取任务当前 DB 状态，判断是否已被取消。"""
+        current = await self.tasks.get(task_id)
+        return current is not None and current.status == TaskStatus.CANCELLED
+
+    async def translate_text(
+        self,
+        text: str,
+        glossary_id: str | None = None,
+        bilingual: bool = False,
+    ) -> dict:
+        """短文本同步翻译。
+
+        直接复用文档翻译流水线（分块 → 文档画像 → 翻译 → 质检修复），
+        因此译文同样受术语表约束。结果在内存中返回，不落任务库。
+        """
+        glossary: dict[str, str] = {}
+        if glossary_id:
+            glossary_data = await self.glossary_service.get_glossary(glossary_id)
+            if glossary_data:
+                glossary = glossary_data.get("terms", {})
+
+        translation_use_case = RunTranslationPipeline(
+            glossary=glossary,
+            engine_cls=TranslationEngine,
+        )
+        chunks = translation_use_case.plan_chunks(text)
+
+        temp_dir = Path("data/temp")
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        temp_path = temp_dir / f"inline_{uuid.uuid4().hex}.md"
+        try:
+            pipeline_output = await translation_use_case.execute(
+                text=text,
+                output_path=temp_path,
+                bilingual=bilingual,
+                prepared_chunks=chunks,
+            )
+        finally:
+            if temp_path.exists():
+                temp_path.unlink()
+
+        results = sorted(pipeline_output.results, key=lambda item: item.chunk_index)
+        segments = [
+            {"source": result.original, "translation": result.translation}
+            for result in results
+            if result.success
+        ]
+        failed_chunks = [result.chunk_index for result in results if not result.success]
+
+        return {
+            "translation": "\n\n".join(segment["translation"] for segment in segments),
+            "segments": segments,
+            "chunk_count": len(results),
+            "failed_chunks": failed_chunks,
+            "glossary_id": glossary_id,
+            "bilingual": bilingual,
+        }
+
+    async def cancel_task(self, task_id: str) -> bool | None:
+        """取消 pending/processing 任务。
+
+        返回:
+        - None: 任务不存在
+        - True: 成功将 pending/processing 任务标记为 cancelled
+        - False: 任务已处于终态（completed/partial_success/failed/cancelled），无法取消
+        """
+        task = await self.tasks.get(task_id)
+        if not task:
+            return None
+        return await self.tasks.cancel(task_id)
+
+    async def export_result(self, task_id: str, variant: str = "mono") -> dict | None:
+        """取回翻译结果（单语 Markdown 或双语对照）。
+
+        返回 None 表示任务不存在；否则返回结果内容与可用性标记。
+        """
+        task = await self.tasks.get(task_id)
+        if not task:
+            return None
+
+        mono_path = Path(f"data/results/{task_id}.md")
+        bilingual_path = Path(f"data/results/{task_id}.bilingual.md")
+        result_path = bilingual_path if variant == "bilingual" else mono_path
+
+        if not result_path.exists():
+            return {
+                "task_id": task_id,
+                "status": task.status.value,
+                "variant": variant,
+                "available": False,
+                "content": None,
+                "path": None,
+            }
+
+        return {
+            "task_id": task_id,
+            "status": task.status.value,
+            "variant": variant,
+            "available": True,
+            "content": result_path.read_text(encoding="utf-8"),
+            "path": str(result_path),
+        }
 
     async def get_task(self, task_id: str) -> TranslationTask | None:
         """获取任务"""
