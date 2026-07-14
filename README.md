@@ -1,413 +1,243 @@
-# AI 翻译系统
+# agentic-translator
 
-基于大语言模型的专业文本翻译系统，专为复杂的后现代哲学文本设计。支持 PDF/EPUB/Markdown 格式，提供术语表管理和智能格式化功能。
+**An agentic translation system for dense, terminology-heavy books and papers — PDF/EPUB/Markdown in, publication-ready Chinese Markdown out.**
 
-[![CI](https://github.com/sena1818/LLMtranslator-for-pdf-epub/actions/workflows/ci.yml/badge.svg)](https://github.com/sena1818/LLMtranslator-for-pdf-epub/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+Built for texts that break naive "chunk-and-prompt" translation: postmodern philosophy (Nick Land's CCRU writings, Reza Negarestani's *Cyclonopedia*), ML papers, and anything where terminology drift across 300+ chunks is unacceptable.
+
+[![CI](https://github.com/sena1818/agentic-translator/actions/workflows/ci.yml/badge.svg)](https://github.com/sena1818/agentic-translator/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 
-## ✨ 核心特性
+**English** | [简体中文](README.zh-CN.md)
 
-- 🚀 **异步并发翻译** - 最高支持 10 个并发请求，速度提升 10 倍
-- 🧩 **章节感知分块** - 按 Markdown 标题与结构块规划 chunk，减少跨章节漂移
-- 🆔 **稳定 Chunk ID** - 每个 chunk 自带结构化元数据，便于缓存、恢复和调试
-- 📚 **术语表约束** - 在 Prompt 中强制注入术语表，帮助保持术语一致
-- 🛡️ **质量校验与选择性修复** - 自动检测未翻译英文、术语遗漏和 Markdown 结构问题，只对高风险块触发修复
-- 🤝 **三角色多 Agent 协作** - 文档分析员先生成全局摘要和术语提示，主翻译员执行翻译，审校员只在高风险块介入
-- ⚠️ **失败块保底输出** - 单个 chunk 失败时写入占位符，不阻塞整体产出
-- 📝 **格式完整保留** - 保留 Markdown 标题、加粗、图片等所有格式
-- 🎨 **智能格式化** - 自动清理 Pandoc 转换残留，优化书籍排版
-- 🌐 **Web 管理界面** - React + FastAPI 构建的现代化 Web 界面
-- 📚 **术语表管理** - 可视化管理翻译术语，支持导入导出
-- 🌗 **双语对照导出** - 双语任务可导出 Markdown 与双栏 HTML
-- 🔌 **MCP Server** - stdio 传输，把全套任务管理与术语表能力暴露给 Claude Desktop 等 MCP 客户端
+![Web UI](docs/images/web-ui.png)
 
-## 🐳 Docker 一键启动（推荐）
+## Why agentic?
 
-无需本地安装 Python / Node，一条命令拉起前端 + API + worker：
+A single prompt cannot hold a whole book. This system splits the work across three LLM roles orchestrated by a document-level **LangGraph StateGraph**:
+
+- **Analyst** — reads the document once, produces a global profile (summary, style, terminology hints) injected into every chunk's prompt.
+- **Translator** — translates each chunk concurrently, constrained by the glossary and the document profile.
+- **Reviewer** — steps in *only* for chunks that fail quality checks (untranslated residue, missing glossary terms, broken Markdown structure), keeping cost proportional to risk.
+
+Every claim about whether this architecture helps is backed by a reproducible [evaluation harness](#evaluation) — including a data-driven decision *not* to build RAG translation memory ([ADR-0002](docs/adr/0002-rag-translation-memory-threshold.md)).
+
+## Features
+
+- 🕸️ **Document-level LangGraph engine** — analyst → Send-API fan-out → per-chunk translate/QA/repair → aggregate, in one StateGraph ([ADR-0001](docs/adr/0001-langgraph-document-level-graph.md)); a `native` asyncio engine is kept behind a config switch for A/B comparison
+- 🚀 **Async concurrency** — configurable parallel requests with token-bucket rate limiting and exponential-backoff retry
+- 🧩 **Chapter-aware chunking** — chunks planned along Markdown headings with stable structured chunk IDs
+- 📚 **Glossary enforcement** — JSON glossaries injected into prompts and verified by the QA checker
+- 🛡️ **Selective repair** — QA flags high-risk chunks; only those get a one-shot Reviewer retranslation
+- 💾 **Chunk-level SQLite cache** — resumable by design; keys include model, glossary, prompt version, and document-profile fingerprint
+- ⚠️ **Failure isolation** — a failed chunk becomes a placeholder, never a stalled document
+- 🌗 **Bilingual export** — alternating source/translation Markdown and two-column HTML
+- 🌐 **Web UI** — React + FastAPI, with a SQLite task queue and horizontally scalable workers
+- 🔌 **MCP server** — stdio transport exposing translation, task management, and glossary tools to Claude Desktop and other MCP clients
+- 🔭 **Observability** — opt-in Langfuse tracing of the full agent call chain and per-chunk token usage, degrading to no-op when unconfigured
+
+## Quick start (Docker)
+
+No local Python/Node needed — one command brings up the frontend, API, and worker:
 
 ```bash
-# 1. 配置密钥
-cp .env.example .env      # 然后填入真实的 SILICONFLOW_API_KEY
+git clone https://github.com/sena1818/agentic-translator.git
+cd agentic-translator
 
-# 2. 构建并启动全套服务
+# 1. Configure the API key
+cp .env.example .env      # then fill in a real SILICONFLOW_API_KEY
+
+# 2. Build and start everything
 docker compose up --build
 
-# 3. 打开浏览器
-# Web 界面: http://localhost:8000
-# API 文档: http://localhost:8000/docs
+# 3. Open the browser
+#    Web UI:   http://localhost:8000
+#    API docs: http://localhost:8000/docs
 ```
 
-- **api** 服务对外提供 Web 界面与 REST API，**worker** 服务独立消费翻译队列，两者共用同一镜像。
-- 任务库、翻译缓存、上传文件与翻译结果全部落在命名数据卷（`translator-data` / `translator-logs`），`docker compose down` 后再 `up` 数据不丢；如需彻底清空用 `docker compose down -v`。
-- 停止服务：`docker compose down`。
+The **api** service serves the Web UI and REST API; the **worker** service consumes the translation queue independently — both share one image. Task DB, translation cache, uploads, and results live in named volumes (`translator-data` / `translator-logs`), so `docker compose down && docker compose up` keeps your data; use `down -v` to wipe it.
 
-## 🚀 快速开始（本地开发）
-
-### 安装依赖
+## Quick start (local)
 
 ```bash
-# 克隆仓库
-git clone https://github.com/你的用户名/translator.git
-cd translator
-
-# 安装 Python 依赖
+git clone https://github.com/sena1818/agentic-translator.git
+cd agentic-translator
 pip install -r requirements.txt
+cp .env.example .env      # fill in SILICONFLOW_API_KEY
 
-# 安装前端依赖（如果需要 Web 界面）
-cd frontend
-npm install
-cd ..
-```
+# Translate a Markdown file
+python translate.py data/input/book.md
 
-### 配置 API 密钥
-
-创建 `.env` 文件：
-
-```bash
-# DeepSeek API（推荐）
-SILICONFLOW_API_KEY=your_api_key_here
-
-# 或 Google Gemini API
-GOOGLE_API_KEY=your_google_api_key
-```
-
-### 基础使用
-
-```bash
-# 翻译 Markdown 文件
-python translate.py data/input/your_book.md
-
-# 翻译 EPUB 文件
-python translate.py BookTrans/your_book.epub
-
-# 使用术语表翻译
-python translate.py data/input/book.md -g data/glossaries/glossary.json
-
-# 双语对照输出
-python translate.py data/input/book.md --bilingual --skip-conversion
-```
-
-翻译结果将保存在 `data/output/` 目录。
-
-### 运行测试
-
-```bash
-# 快速回归测试
-bash scripts/run_tests.sh
-
-# 包含前端构建检查
-bash scripts/run_tests.sh --with-frontend
-
-# 仅运行 Python 单元测试
-python3 -m unittest discover -s tests -v
-```
-
-## 📖 详细文档
-
-- [翻译系统使用指南](docs/guides/翻译系统使用指南.md) - 完整的使用说明
-- [格式化工具使用指南](docs/guides/格式化工具使用指南.md) - Markdown 格式化工具文档
-- [本地运行指南](docs/guides/本地运行指南.md) - Web 界面部署指南
-- [MCP Server 指南](docs/mcp-server.md) - 在 Claude Desktop 等 MCP 客户端中调用本系统
-- [LangChain / LangGraph 学习地图](LangChain_LangGraph学习地图.md) - 面向本项目的学习路线
-- [CLAUDE.md](CLAUDE.md) - 项目架构和技术细节
-
-## 🎯 功能演示
-
-### 命令行翻译
-
-```bash
-# 完整翻译流程
+# EPUB with a glossary, custom output path
 python translate.py BookTrans/Cyclonopedia.epub \
   -g data/glossaries/CPglossary.json \
   -o output_final/Cyclonopedia_CN.md
+
+# Bilingual output
+python translate.py data/input/book.md --bilingual --skip-conversion
 ```
 
-输出示例：
-```
-============================================================
-🚀 翻译流水线启动
-============================================================
-📄 输入文件: input/Cyclonopedia.epub
-🔄 开始格式转换...
-📖 读取文件: data/temp/Cyclonopedia/Cyclonopedia.md
-📚 加载术语表: 73 个词条
-✂️ 文本分块完成: 150 个块
-🚀 开始翻译...
-✅ Chunk 0 完成 (1/150, 0.7%, 速度: 12.5 chunks/分钟)
-...
-🎨 开始格式化处理...
-✅ 翻译完成!
-⏱️  总耗时: 18.50 分钟
-💾 输出文件: output/Cyclonopedia_CN.md
-```
-
-### Web 界面
-
-启动 Web 服务器：
+For the Web UI locally:
 
 ```bash
-# 推荐：长任务模式（后台启动 API + 独立 worker + macOS 防休眠）
-bash scripts/longrun.sh
-
-# 仅启动后端（默认会带一个内联 worker）
-python run_server.py
-
-# 启动前端（新终端）
-cd frontend
-npm run dev
+python run_server.py           # API + inline worker on :8000
+# optional dev frontend:
+cd frontend && npm install && npm run dev   # Vite dev server on :5173
 ```
 
-访问 http://localhost:5173/ 即可使用可视化界面。
-
-如果你希望把 API 和执行器拆开运行：
+For long-running jobs, split API and workers:
 
 ```bash
-# 终端 1：只启动 API
-TRANSLATION_INLINE_WORKER=0 python run_server.py
-
-# 终端 2：启动独立 worker
-python run_worker.py
-
-# 或直接启动多进程 worker 集群
-python run_worker.py --processes 4 --parallel-tasks 2
+TRANSLATION_INLINE_WORKER=0 python run_server.py     # terminal 1: API only
+python run_worker.py --processes 4 --parallel-tasks 2 # terminal 2: worker pool
+# or on macOS: bash scripts/longrun.sh                # background API + worker + PID/log files
 ```
 
-长时间翻译任务更建议使用 `bash scripts/longrun.sh`。它会：
-- 后台启动 API
-- 后台启动独立 worker
-- 将 PID 写入 `logs/server.pid` 和 `logs/worker.pid`
-- 将日志写入 `logs/server.out` 和 `logs/worker.out`
+## Architecture
 
-如果你确实需要防止 Mac 休眠，再显式启用：
-
-```bash
-TRANSLATION_PREVENT_SLEEP=1 bash scripts/longrun.sh
-```
-
-## 🛠️ 核心架构
+### Layered layout
 
 ```
-translator/
-├── translate.py              # 主翻译脚本
-├── src/
-│   ├── core/                 # 核心翻译引擎
-│   │   ├── translator.py     # 异步翻译引擎
-│   │   ├── rate_limiter.py   # Token Bucket 速率限制
-│   │   └── output_manager.py # 顺序输出管理
-│   ├── converters/           # 文档转换器
-│   │   └── document_converter.py
-│   ├── services/             # 导出与格式化服务
-│   │   ├── export_service.py
-│   │   └── markdown_formatter.py
-│   └── api/                  # Web API
-│       ├── app.py            # FastAPI 应用
-│       ├── routes/           # API 路由
-│       ├── services/         # 业务逻辑
-│       └── worker.py         # 队列 worker
-├── run_worker.py             # 独立 worker 启动脚本
-├── scripts/                  # 辅助工具
-│   ├── smart_markdown_formatter.py  # 智能格式化
-│   ├── async_translator.py          # 独立翻译器
-│   └── fixpath.py                   # 路径修复
-├── frontend/                 # React 前端
-│   ├── src/
-│   │   ├── components/      # UI 组件
-│   │   └── services/        # API 客户端
-│   └── package.json
-└── config/
-    └── config.yaml          # 配置文件
+┌─────────────────────── entry points ───────────────────────┐
+│  translate.py (CLI)   src/api (FastAPI + worker)            │
+│  src/interfaces/mcp (MCP stdio server)                      │
+├──────────────────────── pipelines ──────────────────────────┤
+│  src/pipelines: ingest → preprocess → translate →           │
+│  postprocess.  translate/ holds the two engines:            │
+│    graph_engine.py (LangGraph, default)                     │
+│    batch_orchestrator.py (native asyncio, transitional)     │
+│  shared by both: prompt_builder / translation_client /      │
+│  quality_pipeline / document_analyzer                       │
+├───────────────────── domain & core ─────────────────────────┤
+│  src/domain: models, contracts, rules (pure, no I/O)        │
+│  src/core: chunk_planner, translation_cache, rate_limiter,  │
+│            output_manager (ordered streaming), validator    │
+├────────────────────── infrastructure ───────────────────────┤
+│  src/infrastructure: llm (model factory), cache,            │
+│  persistence, converters (Pandoc), observability (Langfuse),│
+│  config, filesystem                                         │
+├──────────────────────── evaluation ─────────────────────────┤
+│  src/evaluation: translator-eval CLI — LLM-as-judge,        │
+│  paired comparisons, consistency-rate metric                │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-## 🔧 配置说明
+### The LangGraph document graph
 
-编辑 `config/config.yaml` 自定义配置：
+```
+        START
+          │
+      ┌───▼────┐   document profile: summary / style / term hints
+      │analyze │   (Analyst role)
+      └───┬────┘
+          │  Send API fan-out — one branch per chunk
+   ┌──────┼─────────┬─ ··· ─┐
+┌──▼───┐ ┌▼─────┐ ┌─▼────┐
+│transl│ │transl│ │transl│   each branch: translate → QA check
+│ate #0│ │ate #1│ │ate #N│   → (fail?) Reviewer repair → re-check
+└──┬───┘ └┬─────┘ └─┬────┘   failures collapse to placeholders
+   └──────┼─────────┴────┘
+      ┌───▼─────┐  stats only — chunks already streamed to disk
+      │aggregate│  in source order by OutputManager
+      └───┬─────┘
+         END
+```
+
+Design decisions worth noting (full rationale in [ADR-0001](docs/adr/0001-langgraph-document-level-graph.md)):
+
+- **No LangGraph checkpointer** — resume is owned by the chunk-level SQLite cache; graph-state persistence would duplicate it.
+- **Ordered streaming survives crashes** — chunks are written to disk in source order as they finish, so a crash mid-book still leaves a readable partial result.
+- **Engine switch** — `multi_agent.engine: langgraph | native` in [config/config.yaml](config/config.yaml); both engines share the same components, and an equivalence test suite keeps them honest until `native` is removed.
+
+## Evaluation
+
+`translator-eval` runs three paired comparisons — each toggles exactly one switch off the production baseline (LangGraph + multi-agent on + glossary on):
+
+| Comparison | Variant A | Variant B |
+| --- | --- | --- |
+| Orchestration engine | LangGraph | native asyncio |
+| Multi-agent roles | on | off (translator only) |
+| Glossary | on | off |
+
+- **Judge**: Gemini (deliberately a different model family from the DeepSeek contestant, to avoid same-family preference), scoring accuracy / fluency / terminology on a 1–5 Likert scale. Judge prompt is versioned at [docs/evals/judge_prompt.md](docs/evals/judge_prompt.md).
+- **Consistency-rate metric**: measures whether repeated off-glossary phrases translate identically across chunks. It gates whether RAG translation memory is worth building at all — threshold 0.90, decision recorded in [ADR-0002](docs/adr/0002-rag-translation-memory-threshold.md).
+- **Reproduce**: `translator-eval --out docs/evals/results` (requires `SILICONFLOW_API_KEY` + `GOOGLE_API_KEY`); `--dry-run` smoke-tests the harness with fake models.
+
+Methodology, datasets, and the latest report live in [docs/evals/](docs/evals/methodology.md). The currently committed report is a `--dry-run` smoke run (placeholder scores); real numbers land there once the paid judge/contestant keys run the full suite.
+
+Throughput on a real production run (Ccru.md, 344 chunks, concurrency 10): **~25 min end-to-end, 13.8 chunks/min, 344/344 succeeded**.
+
+## MCP server
+
+Expose the whole system to Claude Desktop (or any MCP client) as 12 tools — instant text translation, async document jobs, and full glossary CRUD — via stdio. Add to `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "agentic-translator": {
+      "command": "python",
+      "args": ["-m", "src.interfaces.mcp.server"],
+      "cwd": "/absolute/path/to/agentic-translator",
+      "env": { "SILICONFLOW_API_KEY": "sk-your-key-here" }
+    }
+  }
+}
+```
+
+Tool list, workflows, and cancellation semantics: [docs/mcp-server.md](docs/mcp-server.md).
+
+## Observability
+
+Opt-in Langfuse tracing of the agent call chain (analyst / translator / reviewer) with per-chunk token usage. Enable in [config/config.yaml](config/config.yaml) and set `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY`; anything missing degrades to a no-op with a warning — the pipeline never depends on it. Details: [docs/observability.md](docs/observability.md).
+
+## Configuration
+
+Everything lives in [config/config.yaml](config/config.yaml). The switches you'll actually touch:
 
 ```yaml
-# API 配置
 api:
   model: "deepseek-ai/DeepSeek-V3"
   translator:
     temperature: 0.3
 
 concurrency:
-  max_concurrent_requests: 10
+  max_concurrent_requests: 10   # lower to 5 if you hit 429s
   rate_limit_per_minute: 200
-
-text_splitting:
-  chunk_size: 2000
-  chunk_overlap: 200
-  context_window: 800
-
-quality:
-  enable_qa_check: true
-  max_fix_attempts: 1
-  untranslated_word_span: 12
-
-worker:
-  inline_enabled: true
-  poll_interval_seconds: 2
-  stale_after_seconds: 900
-  max_parallel_tasks: 1
-  processes: 1
 
 multi_agent:
   enabled: true
-  analyst_max_chars: 12000
-  analyst_max_sections: 12
+  engine: "langgraph"           # langgraph | native (ADR-0001)
+
+observability:
+  langfuse:
+    enabled: false
 ```
 
-## 📊 翻译流程
+## Glossaries
 
-```
-输入文件 (PDF/EPUB/MD)
-   ↓
-文档转换 (Pandoc)
-   ↓
-章节感知分块 (2000 字/块)
-   ↓
-异步并发翻译 (10 并发)
-   ├─ 文档分析员（摘要 / 风格 / 术语提示）
-   ├─ Chunk 元数据 / 稳定 ID
-   ├─ 术语表应用
-   ├─ 主翻译员
-   ├─ 质量校验 / 选择性修复
-   ├─ 审校修复员（仅高风险块）
-   ├─ Chunk 级缓存恢复
-   ├─ 失败重试（指数退避）
-   └─ 顺序输出管理
-   ↓
-智能格式化
-   ├─ 块级结构解析
-   ├─ 代码块保留
-   ├─ Pandoc div / 目录 / 引用清理
-   └─ 排版优化
-   ↓
-输出 Markdown 文件
-```
-
-## 💡 高级功能
-
-### 术语表管理
-
-创建 JSON 格式术语表：
+JSON maps of English term → Chinese rendering, enforced in prompts and checked by QA:
 
 ```json
 {
   "Hyperstition": "超虚构 (Hyperstition)",
-  "War Machine": "战争机器 (War Machine)",
-  "Rhizome": "根茎 (Rhizome)"
+  "War Machine": "战争机器 (War Machine)"
 }
 ```
 
-使用术语表：
+Pass with `-g data/glossaries/my_glossary.json`, or manage them visually in the Web UI / via MCP tools.
+
+## Development
 
 ```bash
-python translate.py data/input/input.md -g data/glossaries/my_glossary.json
+pip install -e ".[dev]"   # or: pip install -r requirements.txt
+ruff check .              # lint
+pytest                    # unit + integration tests
 ```
 
-### Web 任务状态与队列
+CI runs Ruff, pytest, and the frontend build on every push ([ci.yml](.github/workflows/ci.yml)).
 
-- API 负责创建任务并写入 SQLite 队列
-- worker 负责认领 `pending` 任务并执行翻译
-- 默认 `run_server.py` 会启一个内联 worker，单机开箱即用
-- 生产或长任务场景推荐单独运行 [run_worker.py](/Users/sena/Desktop/LLMAgent/translator/run_worker.py)
-- `python run_worker.py --processes N --parallel-tasks M` 可直接横向扩到多进程，多进程之间通过数据库原子认领避免重复消费
+More docs: [CONTEXT.md](CONTEXT.md) (domain glossary) · [docs/adr/](docs/adr/) (architecture decisions) · [docs/guides/](docs/guides/) (中文使用指南).
 
-- `pending`: 任务已创建，等待后台启动
-- `processing`: 正在翻译
-- `completed`: 全部 chunk 成功
-- `partial_success`: 部分 chunk 失败，但结果文件已生成
-- `failed`: 全部 chunk 失败或任务级错误
+## License
 
-说明：
-- Markdown 结果在 `completed` 和 `partial_success` 状态下都可下载
-- 双栏 HTML 仅对双语任务开放
-
-### 智能格式化
-
-单独格式化已翻译文件：
-
-```bash
-python scripts/smart_markdown_formatter.py output/book_CN.md
-```
-
-功能：
-- ✅ 保留代码块格式
-- ✅ 按块处理标题、列表、Pandoc div 和段落
-- ✅ 清理 Pandoc 残留标记
-- ✅ 转换引用块和强调格式
-- ✅ 修复图片路径
-- ✅ 优化书籍排版
-
-### 跳过格式化
-
-如果需要原始翻译输出：
-
-```bash
-python translate.py input.md --skip-formatting
-```
-
-## 🌟 性能基准
-
-基于 344 块文本的翻译测试（Ccru.md）：
-
-| 指标 | 数值 |
-|------|------|
-| 并发数 | 10 |
-| 总耗时 | ~25 分钟 |
-| 平均速度 | 13.8 chunks/分钟 |
-| 成功率 | 100% (344/344) |
-| 单块平均时长 | 4.3 秒 |
-
-## 🤝 贡献指南
-
-欢迎提交 Issue 和 Pull Request！
-
-1. Fork 本仓库
-2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 开启 Pull Request
-
-## 🧪 测试
-
-当前仓库已覆盖以下基础回归：
-
-- 术语表创建、更新、导入接口
-- 任务 `bilingual` 持久化
-- 单语/双语导出约束
-- 部分失败任务状态判定
-
-运行命令：
-
-```bash
-bash scripts/run_tests.sh
-
-# 如需包含前端构建
-bash scripts/run_tests.sh --with-frontend
-
-# 或仅运行单元测试
-python3 -m unittest discover -s tests -v
-```
-
-## 📝 许可证
-
-本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件
-
-## 🙏 致谢
-
-- [LangChain](https://github.com/langchain-ai/langchain) - LLM 框架
-- [FastAPI](https://fastapi.tiangolo.com/) - Web 框架
-- [React](https://reactjs.org/) - 前端框架
-- [Ant Design](https://ant.design/) - UI 组件库
-- [DeepSeek](https://www.deepseek.com/) - 翻译模型提供商
-
-## 📮 联系方式
-
-- 问题反馈: [GitHub Issues](https://github.com/sena1818/translator/issues)
-- 项目主页: [GitHub](https://github.com/sena1818/translator)
-
----
-
-⭐ 如果这个项目对你有帮助，请给个 Star！
+MIT — see [LICENSE](LICENSE).

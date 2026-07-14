@@ -233,7 +233,7 @@ tail -f logs/translation_async.log
 
 ### Issue tracker
 
-Issues 跟踪在 GitHub（sena1818/LLMtranslator-for-pdf-epub），使用 gh CLI 操作；外部 PR 不作为 triage 请求来源。See `docs/agents/issue-tracker.md`.
+Issues 跟踪在 GitHub（sena1818/agentic-translator），使用 gh CLI 操作；外部 PR 不作为 triage 请求来源。See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 

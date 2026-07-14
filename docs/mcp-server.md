@@ -66,7 +66,7 @@ translator-mcp
     "agentic-translator": {
       "command": "python",
       "args": ["-m", "src.interfaces.mcp.server"],
-      "cwd": "/absolute/path/to/translator",
+      "cwd": "/absolute/path/to/agentic-translator",
       "env": {
         "SILICONFLOW_API_KEY": "sk-your-key-here"
       }
