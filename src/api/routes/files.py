@@ -157,6 +157,44 @@ async def download_result(
     )
 
 
+@router.get("/results/{task_id}/preview")
+async def preview_result(task_id: str):
+    """
+    双语对照预览（只读 JSON）
+
+    返回原文/译文成对的段落列表，供 Web 界面内双栏渲染，无需下载。
+    仅双语且已完成（或部分完成）的任务可用，契约与双语下载约束一致。
+    """
+    task = await db.get_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    if task.status not in {TaskStatus.COMPLETED, TaskStatus.PARTIAL_SUCCESS}:
+        raise HTTPException(status_code=400, detail="任务尚未完成，无法预览")
+    if not task.bilingual:
+        raise HTTPException(status_code=400, detail="仅双语任务支持双语预览")
+
+    _, bilingual_path = _ensure_markdown_variants(task_id=task_id, bilingual_task=True)
+    if not bilingual_path.exists():
+        legacy_path = Path(f"data/results/{task_id}.md")
+        if legacy_path.exists():
+            bilingual_path = legacy_path
+        else:
+            raise HTTPException(status_code=404, detail="双语结果文件不存在")
+
+    paragraphs = ExportService.parse_bilingual_markdown(
+        bilingual_path.read_text(encoding="utf-8")
+    )
+    return {
+        "task_id": task_id,
+        "filename": task.filename,
+        "bilingual": True,
+        "count": len(paragraphs),
+        "paragraphs": [
+            {"source": p.source, "translation": p.translation} for p in paragraphs
+        ],
+    }
+
+
 @router.get("/uploads/{filename}")
 async def get_upload_file(filename: str):
     """获取上传的原始文件"""

@@ -1,0 +1,17 @@
+{
+  "description": "issue #6 评测数据集：1 篇哲学摘选 + 1 篇论文摘选（均为规避版权自撰的代表性英文，寄存学术/技术两种文体）。路径相对本文件所在目录。",
+  "samples": [
+    {
+      "id": "philosophy-01",
+      "kind": "philosophy",
+      "source_file": "philosophy_excerpt.md",
+      "glossary_file": "../../../data/glossaries/CPglossary.json"
+    },
+    {
+      "id": "paper-01",
+      "kind": "paper",
+      "source_file": "paper_excerpt.md",
+      "glossary_file": "../../../data/glossaries/research_paper_glossary.json"
+    }
+  ]
+}

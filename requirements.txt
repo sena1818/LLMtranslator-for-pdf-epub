@@ -1,9 +1,13 @@
 # LangChain 核心组件
+langchain>=0.3.0  # umbrella 包，Langfuse 的 LangChain 回调集成依赖它
 langchain-core>=0.3.0
 langchain-openai>=0.2.0
 langchain-google-genai>=2.0.0
 langchain-text-splitters>=0.3.0
 langgraph>=0.2.0
+
+# 可观测性（Langfuse，经 LangChain 回调追踪 Agent 调用链与 token）
+langfuse>=2.53.0
 
 # 异步文件操作
 aiofiles>=24.1.0

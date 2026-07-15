@@ -3,6 +3,8 @@ LLM 模型工厂
 """
 from __future__ import annotations
 
+from ..observability import build_langfuse_callbacks
+
 try:
     from langchain_openai import ChatOpenAI as _ChatOpenAI
 except ImportError:  # pragma: no cover - 允许轻量测试环境导入
@@ -16,27 +18,39 @@ class ChatModelFactory:
 
     def __init__(self, config):
         self.config = config
+        # 开启且具备密钥时接入 Langfuse，否则为空列表（无操作）。
+        # 回调只构造一次，三个角色共用，追踪自动经 LangChain 回调链下沉到每次调用。
+        self._callbacks = build_langfuse_callbacks(config)
+
+    def _traced(self, model, run_name: str):
+        """把 Langfuse 回调挂到模型上；未接入时原样返回。"""
+        if not self._callbacks:
+            return model
+        return model.with_config({"callbacks": self._callbacks, "run_name": run_name})
 
     def create_translator(self):
-        return _ChatOpenAI(
+        model = _ChatOpenAI(
             model=self.config.model_name,
             temperature=self.config.translator_temperature,
             api_key=self.config.api_key,
             base_url=self.config.api_base_url,
         )
+        return self._traced(model, "translator")
 
     def create_checker(self):
-        return _ChatOpenAI(
+        model = _ChatOpenAI(
             model=self.config.model_name,
             temperature=self.config.checker_temperature,
             api_key=self.config.api_key,
             base_url=self.config.api_base_url,
         )
+        return self._traced(model, "checker")
 
     def create_analyst(self):
-        return _ChatOpenAI(
+        model = _ChatOpenAI(
             model=self.config.model_name,
             temperature=self.config.analyst_temperature,
             api_key=self.config.api_key,
             base_url=self.config.api_base_url,
         )
+        return self._traced(model, "analyst")

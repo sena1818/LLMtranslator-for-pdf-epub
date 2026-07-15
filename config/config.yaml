@@ -73,6 +73,13 @@ worker:
   max_parallel_tasks: 1
   processes: 1
 
+# 可观测性（Langfuse）
+observability:
+  langfuse:
+    enabled: false  # 开关；默认关闭。开启且具备密钥才接入，缺 SDK/密钥自动降级为无操作
+    # 密钥从环境变量读取，不写入本文件：
+    #   LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY / LANGFUSE_HOST（可选，默认云版）
+
 # 三角色多 agent 协作
 multi_agent:
   enabled: true

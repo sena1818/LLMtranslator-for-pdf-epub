@@ -19,3 +19,7 @@
 | 翻译缓存 | TranslationCache | chunk 级 SQLite 缓存，键含模型名、术语表、Prompt 版本与文档画像指纹；承担断点恢复职责。 |
 | 双语对照 | Bilingual | 原文（引用块）+ 译文交替输出的模式，可导出 Markdown 与双栏 HTML。 |
 | 占位符 | Placeholder | 块翻译最终失败时写入的标记文本，保证整体产出不被单块阻塞。 |
+| 可观测 | Observability / Langfuse | 经 LangChain 回调把 Agent 调用链与逐块 token 上报 Langfuse 的能力，配置开关、可降级为无操作。见 docs/observability.md。 |
+| 裁判 | Judge | LLM-as-judge 评测中给译文打分的模型角色，用异源强模型（Gemini），避免与选手同源偏好。 |
+| 对照组 / 变体 | Comparison / Variant | 评测中只拨动一个开关的两两对照（引擎、多 Agent 开关、术语表有无），每个取值为一个变体。 |
+| 译法一致率 | Consistency Rate | 术语表外重复短语每次是否译成同一中文的比率，作为是否立项 RAG 翻译记忆的量化门槛（0.90）。见 ADR-0002。 |

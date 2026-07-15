@@ -233,6 +233,11 @@ class Config:
         return list(self.get("server.reload_dirs", ["src", "frontend"]))
 
     @property
+    def langfuse_enabled(self) -> bool:
+        """是否接入 Langfuse 可观测（还需具备环境变量密钥才真正生效）"""
+        return bool(self.get("observability.langfuse.enabled", False))
+
+    @property
     def multi_agent_enabled(self) -> bool:
         """是否启用三角色多 agent 流水线"""
         return bool(self.get("multi_agent.enabled", True))
