@@ -268,6 +268,16 @@ class Config:
         """文档分析最多返回多少术语提示"""
         return int(self.get("multi_agent.analyst_max_term_hints", 12))
 
+    @property
+    def glossary_extraction_max_chars(self) -> int:
+        """术语抽取采样的最大字符数"""
+        return int(self.get("glossary_extraction.max_chars", 16000))
+
+    @property
+    def glossary_extraction_max_terms(self) -> int:
+        """术语抽取最多返回多少候选术语"""
+        return int(self.get("glossary_extraction.max_terms", 60))
+
 
 # 全局配置实例
 _config = None

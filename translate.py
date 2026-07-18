@@ -101,6 +101,69 @@ class TranslationPipeline:
             logger.warning(f"⚠️ 术语表不存在: {glossary_path}")
             return {}
 
+    def _to_markdown_file(self, input_file: Path, skip_conversion: bool) -> Path | None:
+        """把输入转换成 Markdown 文件路径（已是 Markdown 则原样返回）。"""
+        if skip_conversion or input_file.suffix.lower() in ['.md', '.markdown']:
+            return input_file
+        temp_dir = self.config.get_path("temp") / input_file.stem
+        markdown_file = self.converter.convert(input_file, temp_dir)
+        if markdown_file is None:
+            logger.error("❌ 格式转换失败")
+        return markdown_file
+
+    async def suggest_glossary(
+        self,
+        input_file: Path,
+        output_file: Path = None,
+        glossary_path: Path = None,
+        skip_conversion: bool = False,
+    ):
+        """术语表引导生成：扫描文档，起草候选术语表供人工审阅。"""
+        from src.infrastructure.llm.chat_model_factory import ChatModelFactory
+        from src.pipelines.glossary.glossary_extractor import (
+            GlossaryExtractor,
+            candidates_to_glossary,
+        )
+        from src.pipelines.translate.prompt_builder import TranslationPromptBuilder
+
+        logger.info("="*60)
+        logger.info("🔍 术语表引导生成")
+        logger.info("="*60)
+
+        markdown_file = self._to_markdown_file(input_file, skip_conversion)
+        if markdown_file is None:
+            return
+
+        with open(markdown_file, encoding='utf-8') as f:
+            text = f.read()
+
+        existing = self.load_glossary(glossary_path) if glossary_path else {}
+
+        prompt_builder = TranslationPromptBuilder(self.config)
+        llm = ChatModelFactory(self.config).create_analyst()
+        extractor = GlossaryExtractor(llm=llm, config=self.config, prompt_builder=prompt_builder)
+
+        logger.info("🤖 术语专家扫描中...")
+        candidates = await extractor.extract(text, existing_glossary=existing)
+        if not candidates:
+            logger.warning("⚠️ 未抽取到候选术语")
+            return
+
+        if output_file is None:
+            output_file = self.config.get_path("glossaries") / f"{input_file.stem}_draft.json"
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+
+        draft = candidates_to_glossary(candidates)
+        with open(output_file, 'w', encoding='utf-8') as f:
+            json.dump(draft, f, ensure_ascii=False, indent=2)
+
+        logger.info(f"📝 起草 {len(candidates)} 个候选术语:")
+        for candidate in candidates:
+            note = f"  # {candidate.note}" if candidate.note else ""
+            logger.info(f"  {candidate.term} -> {candidate.translation}{note}")
+        logger.info(f"💾 已写入草稿: {output_file}")
+        logger.info("👉 请审阅、修改后作为术语表使用: -g %s", output_file)
+
     async def run(
         self,
         input_file: Path,
@@ -291,6 +354,13 @@ def main():
     )
 
     parser.add_argument(
+        '--suggest-glossary',
+        action='store_true',
+        help='术语表引导生成: 扫描输入文档起草候选术语表到 -o '
+             '(默认 data/glossaries/{filename}_draft.json)，不执行翻译'
+    )
+
+    parser.add_argument(
         '-c', '--config',
         type=Path,
         help='配置文件路径 (默认: config/config.yaml)'
@@ -305,6 +375,15 @@ def main():
 
     # 运行流水线
     pipeline = TranslationPipeline(config_path=args.config)
+
+    if args.suggest_glossary:
+        asyncio.run(pipeline.suggest_glossary(
+            input_file=args.input,
+            output_file=args.output,
+            glossary_path=args.glossary,
+            skip_conversion=args.skip_conversion,
+        ))
+        return
 
     asyncio.run(pipeline.run(
         input_file=args.input,

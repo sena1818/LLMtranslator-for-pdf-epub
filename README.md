@@ -75,7 +75,15 @@ python translate.py BookTrans/Cyclonopedia.epub \
 
 # Bilingual output
 python translate.py data/input/book.md --bilingual --skip-conversion
+
+# Draft a glossary from the document (review, edit, then pass with -g)
+python translate.py data/input/book.md --suggest-glossary --skip-conversion \
+  -o data/glossaries/book_draft.json
 ```
+
+Don't have a glossary yet? `--suggest-glossary` has a terminology agent scan the
+document and draft candidate terms with suggested translations, so bringing your
+own glossary starts from a first pass instead of a blank file.
 
 For the Web UI locally:
 

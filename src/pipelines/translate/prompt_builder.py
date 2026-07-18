@@ -40,6 +40,19 @@ DEFAULT_ANALYST_REQUIREMENTS = [
     "section_overview 只保留最关键的章节线索",
 ]
 
+DEFAULT_GLOSSARY_EXTRACTOR_ROLE = (
+    "你是各领域专业文本的术语专家，擅长识别需要在全书统一译名的关键术语并给出规范中文译名。"
+)
+
+DEFAULT_GLOSSARY_EXTRACTION_REQUIREMENTS = [
+    "只挑选真正影响一致性的专业术语、专有名词、缩写、人名、作品名、算法/模型/数据集名称",
+    "跳过通用词汇与不影响译名统一的普通名词",
+    "translation 使用「中文译名 (English Term)」格式；缩写可写为「中文译名 (Full Name, ABBR)」",
+    "note 用一句话说明该术语的领域含义或选此译名的理由",
+    "最多返回 {max_terms} 条，按重要性排序",
+    "不要输出 JSON 以外的任何文字",
+]
+
 
 def _numbered(items: list[str]) -> str:
     return "\n".join(f"{index}. {item}" for index, item in enumerate(items, 1))
@@ -67,6 +80,12 @@ class TranslationPromptBuilder:
         )
         self.analyst_requirements = _get(
             "prompt.analyst_requirements", DEFAULT_ANALYST_REQUIREMENTS
+        )
+        self.glossary_extractor_role = _get(
+            "prompt.glossary_extractor_role", DEFAULT_GLOSSARY_EXTRACTOR_ROLE
+        )
+        self.glossary_extraction_requirements = _get(
+            "prompt.glossary_extraction_requirements", DEFAULT_GLOSSARY_EXTRACTION_REQUIREMENTS
         )
 
     def build_translation_prompt(
@@ -142,6 +161,29 @@ class TranslationPromptBuilder:
 
 【章节列表】:
 {{sections}}
+
+【文档片段】:
+{{excerpt}}
+"""
+        return ChatPromptTemplate.from_template(template)
+
+    def build_glossary_extraction_prompt(self) -> ChatPromptTemplate:
+        template = f"""{self.glossary_extractor_role}
+
+请从下面的文档片段中提取需要在全书统一译名的关键术语，并给出建议译名。
+
+输出必须是 JSON 对象，格式如下：
+{{{{
+  "terms": [
+    {{{{"term": "English Term", "translation": "中文译名 (English Term)", "note": "一句话说明"}}}}
+  ]
+}}}}
+
+要求：
+{_numbered(self.glossary_extraction_requirements)}
+
+【已有术语（无需重复提取）】:
+{{existing_terms}}
 
 【文档片段】:
 {{excerpt}}
