@@ -35,6 +35,7 @@ def test_cache_key_changes_with_document_profile():
 
     class Config:
         model_name = "test-model"
+        prompt_fingerprint = "test-prompt-fingerprint"
 
     engine.config = Config()
     chunk = TextChunk(

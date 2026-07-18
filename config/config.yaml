@@ -80,6 +80,17 @@ observability:
     # 密钥从环境变量读取，不写入本文件：
     #   LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY / LANGFUSE_HOST（可选，默认云版）
 
+# Prompt 领域定制（可选）：不配置时使用通用专业文本人设。
+# 各字段覆盖默认角色与要求，完整示例见 config/research_paper.yaml。
+# prompt:
+#   translator_role: "你是资深的机器学习论文译者……"
+#   translation_requirements:
+#     - "……"
+#   repair_requirements:
+#     - "……"
+#   analyst_requirements:
+#     - "terminology_hints 最多 {max_term_hints} 条"
+
 # 三角色多 agent 协作
 multi_agent:
   enabled: true

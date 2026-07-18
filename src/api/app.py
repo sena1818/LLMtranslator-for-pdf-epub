@@ -29,7 +29,7 @@ logging.basicConfig(
 # 创建应用
 app = FastAPI(
     title="AI 翻译系统 API",
-    description="后现代哲学文本翻译系统",
+    description="面向多领域专业文本的智能翻译系统，支持自定义术语表",
     version="1.0.0"
 )
 

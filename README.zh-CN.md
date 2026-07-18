@@ -2,7 +2,7 @@
 
 **面向高密度、术语繁重的书籍与论文的 Agentic 翻译系统 —— 输入 PDF/EPUB/Markdown，输出可直接出版的中文 Markdown。**
 
-专为让朴素"切块 + Prompt"翻译失效的文本而生：后现代哲学（Nick Land 的 CCRU 著作、Reza Negarestani 的《Cyclonopedia》）、ML 论文，以及任何在 300+ 个块之间绝不容许术语漂移的场景。
+不绑定单一领域：自定义一份术语表，即可翻译任何让朴素"切块 + Prompt"方式失效的专业文本 —— 后现代哲学（Nick Land 的 CCRU 著作、Reza Negarestani 的《Cyclonopedia》）、机器学习论文，以及任何在 300+ 个块之间绝不容许术语漂移的场景。
 
 [![CI](https://github.com/sena1818/agentic-translator/actions/workflows/ci.yml/badge.svg)](https://github.com/sena1818/agentic-translator/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)

@@ -2,7 +2,7 @@
 
 **An agentic translation system for dense, terminology-heavy books and papers — PDF/EPUB/Markdown in, publication-ready Chinese Markdown out.**
 
-Built for texts that break naive "chunk-and-prompt" translation: postmodern philosophy (Nick Land's CCRU writings, Reza Negarestani's *Cyclonopedia*), ML papers, and anything where terminology drift across 300+ chunks is unacceptable.
+Not tied to any single domain: bring your own glossary and translate professional texts from any field that breaks naive "chunk-and-prompt" translation — postmodern philosophy (Nick Land's CCRU writings, Reza Negarestani's *Cyclonopedia*), machine learning papers, or anything where terminology drift across 300+ chunks is unacceptable.
 
 [![CI](https://github.com/sena1818/agentic-translator/actions/workflows/ci.yml/badge.svg)](https://github.com/sena1818/agentic-translator/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)

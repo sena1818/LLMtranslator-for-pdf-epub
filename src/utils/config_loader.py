@@ -97,6 +97,7 @@ class Config:
             "model": self.get("api.model"),
             "translator": self.get("api.translator", {}),
             "checker": self.get("api.checker", {}),
+            "prompt": self.get("prompt", {}),
         }
         serialized = json.dumps(payload, sort_keys=True, ensure_ascii=False)
         return hashlib.sha256(serialized.encode("utf-8")).hexdigest()

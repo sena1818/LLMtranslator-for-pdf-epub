@@ -73,8 +73,8 @@ class TranslationEngine:
         )
         self.cache = cache or TranslationCache(self.config.root_dir / "data" / "translation_cache.db")
         self.document_profile = DocumentProfile.empty()
-        self.prompt_version = "v3"
-        self.prompt_builder = TranslationPromptBuilder()
+        self.prompt_version = "v4"
+        self.prompt_builder = TranslationPromptBuilder(self.config)
         self.document_analyzer = DocumentAnalyzer(
             llm_analyst=self.llm_analyst,
             config=self.config,
@@ -212,6 +212,7 @@ class TranslationEngine:
         payload = "|".join(
             [
                 self.prompt_version,
+                self.config.prompt_fingerprint,
                 self.config.model_name or "",
                 chunk.chunk_id,
                 self.document_profile.fingerprint,

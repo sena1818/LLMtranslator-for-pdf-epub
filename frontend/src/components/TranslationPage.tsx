@@ -184,8 +184,8 @@ const TranslationPage: React.FC = () => {
       {/* ── Hero ── */}
       <div className="hero">
         <div className="hero-text">
-          <h1>哲学文本<em>翻译</em></h1>
-          <p>专为后现代哲学文本设计的异步翻译系统，支持术语表一致性检查与断点续传。</p>
+          <h1>专业文本<em>翻译</em></h1>
+          <p>面向术语密集的专业文本（哲学、机器学习、科研论文等）的智能翻译系统，支持自定义术语表、一致性检查与断点续传。</p>
         </div>
         <div className="hero-stats">
           <div>
