@@ -159,6 +159,125 @@ def test_zip_bundle_contains_assets_only():
                         pass
 
 
+def test_preview_endpoint_returns_paragraphs_for_bilingual_task():
+    async def seed(db):
+        await db.initialize()
+        await db.save_task(
+            TranslationTask(
+                task_id="preview-bi",
+                filename="preview.md",
+                status=TaskStatus.COMPLETED,
+                bilingual=True,
+                progress=TaskProgress(current=1, total=1, percentage=100.0),
+                created_at=datetime.now(),
+                updated_at=datetime.now(),
+            )
+        )
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        db = Database(str(Path(temp_dir) / "translation.db"))
+        asyncio.run(seed(db))
+
+        original_db = files_routes.db
+        files_routes.db = db
+
+        result_dir = Path("data/results")
+        result_dir.mkdir(parents=True, exist_ok=True)
+        bilingual_path = result_dir / "preview-bi.bilingual.md"
+        bilingual_path.write_text(
+            "> Hyperstition works.\n\n超虚构在起作用。\n\n---\n"
+            "> The desert grows.\n\n沙漠在蔓延。\n\n---\n",
+            encoding="utf-8",
+        )
+
+        try:
+            app = FastAPI()
+            app.include_router(files_routes.router)
+            client = TestClient(app)
+
+            response = client.get("/api/files/results/preview-bi/preview")
+            assert response.status_code == 200
+            body = response.json()
+            assert body["bilingual"] is True
+            assert body["count"] == 2
+            assert body["paragraphs"][0]["source"] == "Hyperstition works."
+            assert body["paragraphs"][0]["translation"] == "超虚构在起作用。"
+        finally:
+            files_routes.db = original_db
+            mono_path = result_dir / "preview-bi.md"
+            for path in [bilingual_path, mono_path]:
+                if path.exists():
+                    path.unlink()
+
+
+def test_preview_endpoint_rejects_mono_task():
+    async def seed(db):
+        await db.initialize()
+        await db.save_task(
+            TranslationTask(
+                task_id="preview-mono",
+                filename="preview-mono.md",
+                status=TaskStatus.COMPLETED,
+                bilingual=False,
+                progress=TaskProgress(current=1, total=1, percentage=100.0),
+                created_at=datetime.now(),
+                updated_at=datetime.now(),
+            )
+        )
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        db = Database(str(Path(temp_dir) / "translation.db"))
+        asyncio.run(seed(db))
+
+        original_db = files_routes.db
+        files_routes.db = db
+
+        try:
+            app = FastAPI()
+            app.include_router(files_routes.router)
+            client = TestClient(app)
+
+            response = client.get("/api/files/results/preview-mono/preview")
+            assert response.status_code == 400
+            assert "仅双语任务支持" in response.json()["detail"]
+        finally:
+            files_routes.db = original_db
+
+
+def test_preview_endpoint_rejects_unfinished_task():
+    async def seed(db):
+        await db.initialize()
+        await db.save_task(
+            TranslationTask(
+                task_id="preview-pending",
+                filename="preview-pending.md",
+                status=TaskStatus.PROCESSING,
+                bilingual=True,
+                progress=TaskProgress(current=1, total=4, percentage=25.0),
+                created_at=datetime.now(),
+                updated_at=datetime.now(),
+            )
+        )
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        db = Database(str(Path(temp_dir) / "translation.db"))
+        asyncio.run(seed(db))
+
+        original_db = files_routes.db
+        files_routes.db = db
+
+        try:
+            app = FastAPI()
+            app.include_router(files_routes.router)
+            client = TestClient(app)
+
+            response = client.get("/api/files/results/preview-pending/preview")
+            assert response.status_code == 400
+            assert "尚未完成" in response.json()["detail"]
+        finally:
+            files_routes.db = original_db
+
+
 def test_bilingual_markdown_can_backfill_mono_variant():
     async def seed(db):
         await db.initialize()
