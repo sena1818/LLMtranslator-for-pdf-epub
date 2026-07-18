@@ -50,6 +50,19 @@ export interface Glossary {
   updated_at?: string;
 }
 
+export interface BilingualParagraph {
+  source: string;
+  translation: string;
+}
+
+export interface BilingualPreview {
+  task_id: string;
+  filename: string;
+  bilingual: boolean;
+  count: number;
+  paragraphs: BilingualParagraph[];
+}
+
 // ============== 翻译任务 API ==============
 
 /**
@@ -117,6 +130,14 @@ export const downloadResult = (
   variant: 'mono' | 'bilingual' = 'mono'
 ): string => {
   return `${API_BASE_URL}/api/files/results/${taskId}?format=${format}&variant=${variant}`;
+};
+
+/**
+ * 获取双语对照预览（Web 界面内双栏渲染，无需下载）
+ */
+export const getBilingualPreview = async (taskId: string): Promise<BilingualPreview> => {
+  const response = await apiClient.get<BilingualPreview>(`/api/files/results/${taskId}/preview`);
+  return response.data;
 };
 
 // ============== 术语表 API ==============

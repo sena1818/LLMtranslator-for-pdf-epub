@@ -605,6 +605,25 @@ body {
 .term-en { color: var(--text-2); font-weight: 400; font-size: 14px; }
 .term-zh { color: var(--ink); font-weight: 500; font-size: 14px; }
 
+/* ── Bilingual Preview Modal ── */
+.preview-modal-body { max-height: 62vh; overflow-y: auto; padding-right: 4px; }
+
+.preview-row {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 24px;
+  padding: 18px 0; border-bottom: 1px solid var(--border);
+}
+.preview-row:last-child { border-bottom: none; }
+
+.preview-col-label {
+  font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--text-3); font-weight: 400; margin-bottom: 6px;
+}
+
+.preview-source { font-size: 13.5px; color: var(--text-2); line-height: 1.7; }
+.preview-translation { font-size: 14px; color: var(--ink); line-height: 1.8; }
+
+.preview-empty { padding: 48px 0; text-align: center; color: var(--text-3); font-size: 14px; font-weight: 300; }
+
 /* ── Ant Design Overrides ── */
 .ant-modal-content  { border-radius: 8px !important; }
 .ant-modal-header   { border-bottom: 1px solid var(--border) !important; padding-bottom: 14px !important; }

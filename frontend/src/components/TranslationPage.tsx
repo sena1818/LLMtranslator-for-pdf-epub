@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { App } from 'antd';
+import { App, Modal } from 'antd';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   createTranslationTask,
@@ -8,6 +8,7 @@ import {
   deleteTask,
   downloadResult,
   getGlossaryList,
+  getBilingualPreview,
   type TranslationTask,
   type Glossary,
 } from '../services/api';
@@ -25,6 +26,13 @@ const UploadIcon = () => (
     <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
     <polyline points="17 8 12 3 7 8"/>
     <line x1="12" y1="3" x2="12" y2="15"/>
+  </svg>
+);
+
+const PreviewIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+    <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/>
+    <circle cx="12" cy="12" r="3"/>
   </svg>
 );
 
@@ -51,6 +59,7 @@ const TranslationPage: React.FC = () => {
   const [selectedGlossary, setSelectedGlossary] = useState<string>('');
   const [bilingual, setBilingual] = useState(false);
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
+  const [previewTaskId, setPreviewTaskId] = useState<string | null>(null);
 
   // ── Queries ──
   const { data: glossaries = [] } = useQuery<Glossary[]>({
@@ -73,6 +82,12 @@ const TranslationPage: React.FC = () => {
       if (t && ['completed', 'partial_success', 'failed'].includes(t.status)) return false;
       return 2000;
     },
+  });
+
+  const { data: previewData, isLoading: isLoadingPreview } = useQuery({
+    queryKey: ['preview', previewTaskId],
+    queryFn: () => getBilingualPreview(previewTaskId!),
+    enabled: !!previewTaskId,
   });
 
   // ── Mutations ──
@@ -238,6 +253,9 @@ const TranslationPage: React.FC = () => {
             </button>
             {doneTask.bilingual && (
               <>
+                <button className="btn-download-html" onClick={() => setPreviewTaskId(doneTask.task_id)}>
+                  <PreviewIcon /> 双语对照预览
+                </button>
                 <button className="btn-download-md" onClick={() => window.open(downloadResult(doneTask.task_id, 'md', 'bilingual'), '_blank')}>
                   <DownloadIcon /> 下载双语 Markdown
                 </button>
@@ -444,6 +462,12 @@ const TranslationPage: React.FC = () => {
                           {task.bilingual && (
                             <>
                               <button
+                                className="btn-dl-html"
+                                onClick={() => setPreviewTaskId(task.task_id)}
+                              >
+                                <PreviewIcon /> 预览
+                              </button>
+                              <button
                                 className="btn-dl-md"
                                 onClick={() => window.open(downloadResult(task.task_id, 'md', 'bilingual'), '_blank')}
                               >
@@ -476,6 +500,36 @@ const TranslationPage: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* ── Bilingual Preview Modal ── */}
+      <Modal
+        title={previewData ? `双语对照 · ${previewData.filename}` : '双语对照预览'}
+        open={!!previewTaskId}
+        onCancel={() => setPreviewTaskId(null)}
+        footer={null}
+        width={880}
+      >
+        <div className="preview-modal-body">
+          {isLoadingPreview ? (
+            <div className="preview-empty">加载中…</div>
+          ) : !previewData || previewData.paragraphs.length === 0 ? (
+            <div className="preview-empty">暂无可预览的段落</div>
+          ) : (
+            previewData.paragraphs.map((p, i) => (
+              <div className="preview-row" key={i}>
+                <div>
+                  <div className="preview-col-label">原文</div>
+                  <div className="preview-source">{p.source}</div>
+                </div>
+                <div>
+                  <div className="preview-col-label">译文</div>
+                  <div className="preview-translation">{p.translation}</div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </Modal>
 
     </div>
   );
