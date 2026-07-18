@@ -11,6 +11,7 @@ from pathlib import Path
 
 from ..domain.models.translation_models import DocumentProfile, TranslationResult
 from ..domain.rules.chunk_planning import ChunkPlanner, TextChunk
+from ..domain.rules.glossary_selection import select_relevant_glossary
 from ..infrastructure.cache.translation_cache import TranslationCache
 from ..infrastructure.llm.chat_model_factory import ChatModelFactory
 from ..infrastructure.llm.rate_limiter import RateLimiter
@@ -205,9 +206,16 @@ class TranslationEngine:
         return DocumentAnalyzer.parse(raw, self.config)
 
     def _build_cache_key(self, chunk: TextChunk) -> str:
-        """构造缓存键，避免不同模型/术语表之间串用"""
+        """构造缓存键，避免不同模型/术语表之间串用。
+
+        术语表只纳入本块实际注入的子集（与 translation_client 口径一致），
+        这样向术语表新增无关术语时不会使全书缓存失效。
+        """
+        relevant_glossary = select_relevant_glossary(
+            self.glossary, chunk.text, chunk.context_text
+        )
         glossary_payload = "\n".join(
-            f"{en}:{zh}" for en, zh in sorted(self.glossary.items())
+            f"{en}:{zh}" for en, zh in sorted(relevant_glossary.items())
         )
         payload = "|".join(
             [

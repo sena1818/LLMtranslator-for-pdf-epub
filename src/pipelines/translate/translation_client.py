@@ -13,6 +13,7 @@ import time
 
 from ...core.chunk_planner import TextChunk
 from ...domain.models.translation_models import DocumentProfile
+from ...domain.rules.glossary_selection import select_relevant_glossary
 from .langchain_compat import StrOutputParser
 from .prompt_builder import TranslationPromptBuilder
 
@@ -47,13 +48,17 @@ class TranslationClient:
         chain = prompt | self.llm_translator | StrOutputParser()
         max_retries = self.config.get("api.translator.max_retries", 3)
 
+        relevant_glossary = select_relevant_glossary(
+            self.glossary, chunk.text, chunk.context_text
+        )
+
         for retry in range(max_retries + 1):
             try:
                 start_time = time.time()
                 translation = await chain.ainvoke(
                     {
                         "document_profile": document_profile.to_prompt_text(),
-                        "glossary": "\n".join([f"- {en}: {zh}" for en, zh in self.glossary.items()]),
+                        "glossary": "\n".join([f"- {en}: {zh}" for en, zh in relevant_glossary.items()]),
                         "section_title": " > ".join(chunk.section_path) if chunk.section_path else chunk.section_title,
                         "context": chunk.context_text,
                         "text": chunk.text,

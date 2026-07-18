@@ -6,6 +6,7 @@ from __future__ import annotations
 from ...core.chunk_planner import TextChunk
 from ...core.validator import QualityReport, TranslationValidator
 from ...domain.models.translation_models import DocumentProfile
+from ...domain.rules.glossary_selection import select_relevant_glossary
 from .langchain_compat import StrOutputParser
 from .prompt_builder import TranslationPromptBuilder
 
@@ -81,11 +82,15 @@ class TranslationQualityPipeline:
         prompt = self.prompt_builder.build_repair_prompt()
         chain = prompt | self.llm_checker | StrOutputParser()
 
+        relevant_glossary = select_relevant_glossary(
+            self.glossary, chunk.text, chunk.context_text
+        )
+
         return await chain.ainvoke({
             "section_title": " > ".join(chunk.section_path) if chunk.section_path else chunk.section_title,
             "original": chunk.text,
             "translation": translation,
             "issues": issues_text,
             "document_profile": document_profile.to_prompt_text(),
-            "glossary": "\n".join([f"- {en}: {zh}" for en, zh in self.glossary.items()]),
+            "glossary": "\n".join([f"- {en}: {zh}" for en, zh in relevant_glossary.items()]),
         })
