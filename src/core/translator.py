@@ -151,13 +151,16 @@ class TranslationEngine:
 
         return text.strip()
 
-    def _remove_repetitions(self, text: str) -> str:
-        """
-        检测并移除重复短语
+    # 判定为 LLM 退化循环所需的最小连续重复次数。取较高阈值是刻意的：
+    # 专业文本（尤其后现代哲学）常有刻意的排比与咒语式重复，低阈值会误伤正文；
+    # 只有远超正常修辞的失控循环才折叠，且每次折叠都打日志便于事后核查。
+    _REPETITION_MIN_REPEATS = 10
 
-        常见的 LLM 重复模式:
-        1. 短语连续重复 5+ 次
-        2. 句子重复
+    def _remove_repetitions(self, text: str) -> str:
+        """折叠疑似 LLM 退化循环的连续重复，命中即记日志。
+
+        仅处理远超正常修辞的失控重复（见 _REPETITION_MIN_REPEATS），
+        以免误伤刻意的重复表达。标点重复无修辞价值，阈值单独放低。
 
         Args:
             text: 待处理文本
@@ -165,17 +168,19 @@ class TranslationEngine:
         Returns:
             清理后的文本
         """
-        # 1. 移除连续重复的短语 (5-50字符重复5次以上)
-        # 匹配: "某某某某某某某某某某某某" (重复的短语)
-        text = re.sub(r'(.{5,50}?)\1{4,}', r'\1', text)
+        extra = self._REPETITION_MIN_REPEATS - 1  # 正则 \1{n,} 中的 n（首次出现之外的次数）
+        rules = [
+            (rf'(.{{5,50}}?)\1{{{extra},}}', r'\1', 0, "短语"),
+            (rf'([一-龥]{{2,10}})\1{{{extra},}}', r'\1', 0, "中文词组"),
+            (rf'\b(\w{{3,}})\s+(\1\s+){{{extra},}}', r'\1 ', re.IGNORECASE, "英文单词"),
+        ]
+        for pattern, repl, flags, label in rules:
+            new_text = re.sub(pattern, repl, text, flags=flags)
+            if new_text != text:
+                logger.warning("clean_output 折叠疑似 LLM 循环重复(%s)", label)
+                text = new_text
 
-        # 2. 移除连续重复的中文词组 (2-10字重复5次以上)
-        text = re.sub(r'([一-龥]{2,10})\1{4,}', r'\1', text)
-
-        # 3. 移除连续重复的英文单词 (重复5次以上)
-        text = re.sub(r'\b(\w{3,})\s+(\1\s+){4,}', r'\1 ', text, flags=re.IGNORECASE)
-
-        # 4. 移除连续重复的标点 (如 。。。。。。)
+        # 连续重复标点(如 。。。。。。)保留 3 个；这类几乎不会是刻意排版
         text = re.sub(r'([。，！？；：])\1{3,}', r'\1\1\1', text)
 
         return text
